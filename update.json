@@ -5,7 +5,7 @@
         {
           "version": "1.0.3",
           "update_link": "https://github.com/stem-sw/zotero-reader-tool-shortcuts/releases/download/v1.0.3/reader-tool-shortcuts-1.0.3.xpi",
-          "update_hash": "sha512:d906d77041b3df77d17f963f9987ec2bd076298280baa2aad4742cbb9900ab3a8fb6312ab485daeb96cc4173b73d5e5e75b7a0bc5713ee02f863b9945302b82b",
+          "update_hash": "sha512:d63d343f9387dc9f1a99732b05b3faadffeea690cf93018aa79978a3c72649bf02788ffba33b67b9cb5e6588abca862d975fe0cfb1e9821f1c579ece5f6b458d",
           "applications": {
             "zotero": {
               "strict_min_version": "9.0",
