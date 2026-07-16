@@ -50,10 +50,12 @@ DIST.mkdir(parents=True)
 with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
     for filename in required:
         info = zipfile.ZipInfo(filename, date_time=(1980, 1, 1, 0, 0, 0))
+        info.create_system = 3
         info.compress_type = zipfile.ZIP_STORED
         info.external_attr = 0o644 << 16
         archive.writestr(info, normalized_text_bytes(ADDON / filename))
     info = zipfile.ZipInfo("core.js", date_time=(1980, 1, 1, 0, 0, 0))
+    info.create_system = 3
     info.compress_type = zipfile.ZIP_STORED
     info.external_attr = 0o644 << 16
     archive.writestr(info, normalized_text_bytes(CORE))
