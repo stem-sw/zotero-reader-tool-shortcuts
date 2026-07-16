@@ -1,0 +1,49 @@
+.rts-settings {
+  max-width: 720px;
+  padding: 16px 20px;
+  color: var(--fill-primary, inherit);
+}
+
+.rts-settings h1 {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+}
+
+.rts-settings .description,
+.rts-settings .hint {
+  color: var(--fill-secondary, #666);
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(180px, 1.5fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.shortcut-row input,
+.shortcut-row button {
+  min-height: 30px;
+  box-sizing: border-box;
+}
+
+.shortcut-row input {
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+#rts-status {
+  min-height: 1.4em;
+  margin: 10px 0 0;
+}
+
+#rts-status.error {
+  color: #c62828;
+}
+
+@media (max-width: 620px) {
+  .shortcut-row {
+    grid-template-columns: 1fr 1.5fr;
+  }
+}

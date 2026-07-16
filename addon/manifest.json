@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Reader Tool Shortcuts",
+  "version": "1.0.2",
+  "description": "Configurable shortcuts for Zotero Reader note, text, and area annotation tools.",
+  "author": "MI Lab",
+  "applications": {
+    "zotero": {
+      "id": "reader-tool-shortcuts@mi-lab.local",
+      "update_url": "https://raw.githubusercontent.com/stem-sw/zotero-reader-tool-shortcuts/main/update.json",
+      "strict_min_version": "9.0",
+      "strict_max_version": "9.*"
+    }
+  }
+}

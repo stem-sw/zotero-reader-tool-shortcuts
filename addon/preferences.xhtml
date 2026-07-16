@@ -1,0 +1,31 @@
+<vbox id="zotero-prefpane-reader-tool-shortcuts" class="main-section rts-settings">
+  <html:p class="description">
+    입력칸을 선택한 뒤 원하는 키 조합을 누르세요. 변경 사항은 즉시 적용됩니다.
+  </html:p>
+
+  <html:div class="shortcut-row">
+    <html:label for="rts-note">노트 추가</html:label>
+    <html:input id="rts-note" type="text" readonly="readonly" data-pref="noteShortcut" />
+    <html:button type="button" data-clear="noteShortcut">해제</html:button>
+    <html:button type="button" data-reset="noteShortcut">기본값</html:button>
+  </html:div>
+
+  <html:div class="shortcut-row">
+    <html:label for="rts-text">텍스트 추가</html:label>
+    <html:input id="rts-text" type="text" readonly="readonly" data-pref="textShortcut" />
+    <html:button type="button" data-clear="textShortcut">해제</html:button>
+    <html:button type="button" data-reset="textShortcut">기본값</html:button>
+  </html:div>
+
+  <html:div class="shortcut-row">
+    <html:label for="rts-area">영역 선택</html:label>
+    <html:input id="rts-area" type="text" readonly="readonly" data-pref="areaShortcut" />
+    <html:button type="button" data-clear="areaShortcut">해제</html:button>
+    <html:button type="button" data-reset="areaShortcut">기본값</html:button>
+  </html:div>
+
+  <html:p id="rts-status" role="status" aria-live="polite"></html:p>
+  <html:p class="hint">
+    문자 입력 중에는 오작동하지 않도록 검색창, 노트 편집기, 페이지 번호 입력창에서는 단축키를 무시합니다.
+  </html:p>
+</vbox>

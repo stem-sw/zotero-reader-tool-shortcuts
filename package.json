@@ -1,0 +1,10 @@
+{
+  "name": "zotero-reader-tool-shortcuts",
+  "version": "1.0.2",
+  "private": true,
+  "description": "Configurable Zotero Reader annotation tool shortcuts",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "build": "npm test && python scripts/build_xpi.py"
+  }
+}
