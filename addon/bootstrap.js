@@ -3,9 +3,12 @@ var ReaderToolShortcutsCore;
 var ReaderToolShortcutsPreferencePaneID;
 var ReaderToolShortcutsListener;
 var ReaderToolShortcutsWindows = [];
-var ReaderToolShortcutsReaders = [];
 var ReaderToolShortcutsGeneration = 0;
 var ReaderToolShortcutsShuttingDown = false;
+var ReaderToolShortcutsScanTimer = null;
+var ReaderToolShortcutsScanGeneration = null;
+var ReaderToolShortcutsSetInterval;
+var ReaderToolShortcutsClearInterval;
 
 const RTS_PREF_BRANCH = "extensions.reader-tool-shortcuts.";
 
@@ -44,63 +47,12 @@ function rtsIsActive(generation) {
   );
 }
 
-function rtsDetachReader(reader) {
-  const record = ReaderToolShortcutsReaders.find(item => item.reader === reader);
-  if (!record) return;
-  try {
-    record.win.removeEventListener("webviewerloaded", record.handler, true);
-    record.win.removeEventListener("unload", record.unloadHandler, true);
-  }
-  catch (error) {
-    // The outer reader window may already have been destroyed.
-  }
-  ReaderToolShortcutsReaders = ReaderToolShortcutsReaders.filter(
-    item => item !== record
+function rtsIsStartupCurrent(generation, zotero) {
+  return Boolean(
+    !ReaderToolShortcutsShuttingDown &&
+    generation === ReaderToolShortcutsGeneration &&
+    Zotero === zotero
   );
-}
-
-async function rtsAttachCurrentViews(reader, toolbarDoc, generation) {
-  try {
-    // Reader startup can replace _primaryView while an earlier View's
-    // initializedPromise remains pending. Poll the current View reference,
-    // matching the proven pattern used by Zotero PDF Translate.
-    for (let attempt = 0; attempt < 200; attempt++) {
-      if (!rtsIsActive(generation)) return;
-      const readerRecord = ReaderToolShortcutsReaders.find(
-        item => item.reader === reader
-      );
-      if (!readerRecord || readerRecord.win !== reader._iframeWindow) return;
-
-      const primaryView = reader._internalReader?._primaryView;
-      const secondaryView = reader._internalReader?._secondaryView;
-      const primaryWin = primaryView?._iframeWindow;
-      if (primaryWin) {
-        rtsAttachToWindow(primaryWin, toolbarDoc, generation);
-        if (secondaryView?._iframeWindow) {
-          rtsAttachToWindow(secondaryView._iframeWindow, toolbarDoc, generation);
-        }
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
-  }
-  catch (error) {
-    if (Zotero) Zotero.logError(error);
-  }
-}
-
-function rtsWatchReaderViews(reader, toolbarDoc, generation) {
-  const win = reader?._iframeWindow;
-  if (!win || ReaderToolShortcutsReaders.some(item => item.reader === reader)) {
-    return;
-  }
-  const handler = () => {
-    void rtsAttachCurrentViews(reader, toolbarDoc, generation);
-  };
-  const unloadHandler = () => rtsDetachReader(reader);
-  win.addEventListener("webviewerloaded", handler, true);
-  win.addEventListener("unload", unloadHandler, true);
-  ReaderToolShortcutsReaders.push({ reader, win, handler, unloadHandler });
 }
 
 function rtsAttachToWindow(win, toolbarDoc, generation) {
@@ -112,9 +64,21 @@ function rtsAttachToWindow(win, toolbarDoc, generation) {
   ) {
     return;
   }
-  if (ReaderToolShortcutsWindows.some(record => record.win === win)) return;
+  const existing = ReaderToolShortcutsWindows.find(
+    record => record.win === win
+  );
+  if (existing) {
+    existing.toolbarDoc = toolbarDoc;
+    return;
+  }
 
-  const handler = event => {
+  const record = {
+    win,
+    toolbarDoc,
+    handler: null,
+    unloadHandler: null,
+  };
+  record.handler = event => {
     if (
       event.defaultPrevented ||
       event.isComposing ||
@@ -129,38 +93,95 @@ function rtsAttachToWindow(win, toolbarDoc, generation) {
 
     // This invokes Zotero's own handleToolClick() path. It changes only the
     // active annotation mode; it does not move the pointer or create an annotation.
-    if (ReaderToolShortcutsCore.activateTool(toolbarDoc, tool)) {
+    if (ReaderToolShortcutsCore.activateTool(record.toolbarDoc, tool)) {
       event.preventDefault();
       event.stopPropagation();
     }
   };
 
-  const unloadHandler = () => rtsDetachWindow(win);
-  win.addEventListener("keydown", handler, true);
-  win.addEventListener("unload", unloadHandler, true);
-  ReaderToolShortcutsWindows.push({ win, handler, unloadHandler });
-}
-
-async function rtsAttachToReader(reader, generation) {
-  if (!reader) return;
+  record.unloadHandler = () => rtsDetachWindow(win);
+  let keydownAttached = false;
   try {
-    await reader._waitForReader();
-    await reader._initPromise;
-    if (!rtsIsActive(generation)) return;
-    const toolbarDoc = reader._iframeWindow?.document;
-    rtsAttachToWindow(reader._iframeWindow, toolbarDoc, generation);
-    rtsWatchReaderViews(reader, toolbarDoc, generation);
-    await rtsAttachCurrentViews(reader, toolbarDoc, generation);
+    win.addEventListener("keydown", record.handler, true);
+    keydownAttached = true;
+    win.addEventListener("unload", record.unloadHandler, true);
+    ReaderToolShortcutsWindows.push(record);
   }
   catch (error) {
-    if (Zotero) Zotero.logError(error);
+    if (keydownAttached) {
+      try {
+        win.removeEventListener("keydown", record.handler, true);
+      }
+      catch (cleanupError) {}
+    }
   }
 }
 
-function rtsDetachAllReaders() {
-  for (const { reader } of [...ReaderToolShortcutsReaders]) {
-    rtsDetachReader(reader);
+function rtsScanReaders(generation) {
+  if (!rtsIsActive(generation)) return;
+
+  let readers;
+  try {
+    readers = [...(Zotero.Reader?._readers || [])];
   }
+  catch (error) {
+    return;
+  }
+
+  const liveWindows = new Set();
+  let complete = true;
+  for (const reader of readers) {
+    try {
+      const toolbarDoc = reader?._iframeWindow?.document;
+      if (!toolbarDoc) continue;
+      const windows = [
+        reader._iframeWindow,
+        reader._internalReader?._primaryView?._iframeWindow,
+        reader._internalReader?._secondaryView?._iframeWindow,
+      ].filter(Boolean);
+      for (const win of windows) {
+        liveWindows.add(win);
+        rtsAttachToWindow(win, toolbarDoc, generation);
+      }
+    }
+    catch (error) {
+      complete = false;
+    }
+  }
+
+  if (complete) {
+    for (const record of [...ReaderToolShortcutsWindows]) {
+      if (!liveWindows.has(record.win)) rtsDetachWindow(record.win);
+    }
+  }
+}
+
+function rtsHandleReaderEvent() {
+  rtsScanReaders(ReaderToolShortcutsGeneration);
+}
+
+function rtsStartReaderScan(generation) {
+  rtsScanReaders(generation);
+  if (
+    ReaderToolShortcutsScanTimer !== null &&
+    ReaderToolShortcutsScanGeneration === generation
+  ) {
+    return;
+  }
+  rtsStopReaderScan();
+  ReaderToolShortcutsScanGeneration = generation;
+  ReaderToolShortcutsScanTimer = ReaderToolShortcutsSetInterval(
+    () => rtsScanReaders(generation),
+    250
+  );
+}
+
+function rtsStopReaderScan() {
+  if (ReaderToolShortcutsScanTimer !== null) {
+    ReaderToolShortcutsClearInterval(ReaderToolShortcutsScanTimer);
+  }
+  ReaderToolShortcutsScanTimer = null;
+  ReaderToolShortcutsScanGeneration = null;
 }
 
 function rtsDetachAllReaderWindows() {
@@ -175,26 +196,47 @@ async function startup({ id, rootURI }) {
   const generation = ++ReaderToolShortcutsGeneration;
   ReaderToolShortcutsShuttingDown = false;
 
+  const timers = ChromeUtils.importESModule(
+    "resource://gre/modules/Timer.sys.mjs"
+  );
+  ReaderToolShortcutsSetInterval = timers.setInterval;
+  ReaderToolShortcutsClearInterval = timers.clearInterval;
+
   Zotero = ChromeUtils.importESModule(
     "chrome://zotero/content/zotero.mjs"
   ).Zotero;
-  await Zotero.initializationPromise;
+  const zotero = Zotero;
+  await zotero.initializationPromise;
+  if (!rtsIsStartupCurrent(generation, zotero)) return;
 
   const coreScope = {};
   Services.scriptloader.loadSubScript(rootURI + "core.js", coreScope);
   ReaderToolShortcutsCore = coreScope.ReaderToolShortcutsCore;
+  if (!ReaderToolShortcutsCore?.TOOLS) {
+    throw new Error("Reader Tool Shortcuts core API failed to load");
+  }
 
-  ReaderToolShortcutsPreferencePaneID = await Zotero.PreferencePanes.register({
+  const preferencePaneID = await zotero.PreferencePanes.register({
     pluginID: id,
     src: rootURI + "preferences.xhtml",
     scripts: [rootURI + "core.js", rootURI + "preferences.js"],
     stylesheets: [rootURI + "preferences.css"],
     label: "Reader Tool Shortcuts",
   });
+  if (!rtsIsStartupCurrent(generation, zotero)) {
+    try {
+      if (preferencePaneID && zotero.PreferencePanes.unregister) {
+        zotero.PreferencePanes.unregister(preferencePaneID);
+      }
+    }
+    catch (error) {
+      // Shutdown may already have destroyed the preference-pane registry.
+    }
+    return;
+  }
+  ReaderToolShortcutsPreferencePaneID = preferencePaneID;
 
-  ReaderToolShortcutsListener = ({ reader }) => {
-    void rtsAttachToReader(reader, generation);
-  };
+  ReaderToolShortcutsListener = rtsHandleReaderEvent;
 
   Zotero.Reader.registerEventListener(
     "renderToolbar",
@@ -202,19 +244,18 @@ async function startup({ id, rootURI }) {
     id
   );
 
-  for (const reader of Zotero.Reader._readers) {
-    void rtsAttachToReader(reader, generation);
-  }
+  rtsStartReaderScan(generation);
 
   rtsLog("started");
 }
 
 function shutdown(data, reason) {
-  if (reason === APP_SHUTDOWN) return;
-
   ReaderToolShortcutsShuttingDown = true;
   ReaderToolShortcutsGeneration++;
-  rtsDetachAllReaders();
+  rtsStopReaderScan();
+
+  if (reason === APP_SHUTDOWN) return;
+
   rtsDetachAllReaderWindows();
 
   // Zotero removes Reader listeners by plugin ID during plugin shutdown.

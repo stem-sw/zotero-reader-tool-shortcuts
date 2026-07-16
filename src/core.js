@@ -4,7 +4,7 @@
     module.exports = api;
   }
   root.ReaderToolShortcutsCore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(this, function () {
   "use strict";
 
   const TOOLS = [

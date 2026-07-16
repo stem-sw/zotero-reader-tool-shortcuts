@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Reader Tool Shortcuts",
-  "version": "1.0.5",
+  "version": "1.0.9",
   "description": "Configurable shortcuts for Zotero Reader note, text, and area annotation tools.",
   "author": "MI Lab",
   "applications": {

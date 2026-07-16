@@ -1,7 +1,27 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 
 const core = require("../src/core.js");
+
+test("publishes the API on the loadSubScript target scope", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "src", "core.js"),
+    "utf8"
+  );
+  const targetScope = {};
+  const context = vm.createContext({ targetScope });
+
+  vm.runInContext(
+    `(function (module) { ${source}\n}).call(targetScope, undefined);`,
+    context
+  );
+
+  assert.equal(typeof targetScope.ReaderToolShortcutsCore, "object");
+  assert.equal(targetScope.ReaderToolShortcutsCore.TOOLS.length, 3);
+});
 
 function keyEvent(overrides = {}) {
   return {
