@@ -14,6 +14,8 @@ function loadBootstrap() {
     ChromeUtils: {},
     Services: {},
     APP_SHUTDOWN: 2,
+    setTimeout,
+    clearTimeout,
   };
   vm.createContext(context);
   vm.runInContext(source, context);
@@ -94,7 +96,35 @@ test("shutdown generation change cancels a pending Reader attachment", async () 
   assert.equal(outer.has("keydown"), false);
 });
 
-test("waits for PDF view initialization before attaching its event window", async () => {
+test("polls the current PDF view when the initially captured view stays stale", async () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const pdf = fakeWindow();
+  const staleView = {
+    _iframeWindow: null,
+    initializedPromise: new Promise(() => {}),
+  };
+  const reader = {
+    _waitForReader: async () => {},
+    _initPromise: Promise.resolve(),
+    _iframeWindow: outer,
+    _internalReader: { _primaryView: staleView },
+  };
+  context.ReaderToolShortcutsGeneration = 13;
+  context.ReaderToolShortcutsShuttingDown = false;
+
+  void context.rtsAttachToReader(reader, 13);
+  await new Promise(resolve => setImmediate(resolve));
+  reader._internalReader._primaryView = {
+    _iframeWindow: pdf,
+    initializedPromise: Promise.resolve(),
+  };
+  await new Promise(resolve => setTimeout(resolve, 120));
+
+  assert.equal(pdf.has("keydown"), true);
+});
+
+test("waits until the PDF event window becomes available", async () => {
   const context = loadBootstrap();
   const outer = fakeWindow();
   const pdf = fakeWindow();
@@ -191,16 +221,11 @@ test("reattaches to a replacement PDF view after webviewerloaded", async () => {
   assert.equal(firstPdf.has("keydown"), true);
 
   const replacementPdf = fakeWindow();
-  let resolveReplacement;
   reader._internalReader._primaryView = {
     _iframeWindow: replacementPdf,
-    initializedPromise: new Promise(resolve => { resolveReplacement = resolve; }),
+    initializedPromise: new Promise(() => {}),
   };
   outer.emit("webviewerloaded");
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(replacementPdf.has("keydown"), false);
-
-  resolveReplacement();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(replacementPdf.has("keydown"), true);
 });

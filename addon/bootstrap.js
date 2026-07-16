@@ -59,34 +59,29 @@ function rtsDetachReader(reader) {
   );
 }
 
-async function rtsAttachView(reader, view, toolbarDoc, generation) {
-  if (!view) return;
-  try {
-    if (view.initializedPromise) await view.initializedPromise;
-    if (!rtsIsActive(generation)) return;
-    const readerRecord = ReaderToolShortcutsReaders.find(
-      item => item.reader === reader
-    );
-    if (!readerRecord || readerRecord.win !== reader._iframeWindow) return;
-    const currentViews = [
-      reader._internalReader?._primaryView,
-      reader._internalReader?._secondaryView,
-    ];
-    if (!currentViews.includes(view)) return;
-    rtsAttachToWindow(view._iframeWindow, toolbarDoc, generation);
-  }
-  catch (error) {
-    if (Zotero) Zotero.logError(error);
-  }
-}
-
 async function rtsAttachCurrentViews(reader, toolbarDoc, generation) {
   try {
-    const primaryView = reader._internalReader?._primaryView;
-    const secondaryView = reader._internalReader?._secondaryView;
-    await rtsAttachView(reader, primaryView, toolbarDoc, generation);
-    if (secondaryView) {
-      void rtsAttachView(reader, secondaryView, toolbarDoc, generation);
+    // Reader startup can replace _primaryView while an earlier View's
+    // initializedPromise remains pending. Poll the current View reference,
+    // matching the proven pattern used by Zotero PDF Translate.
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if (!rtsIsActive(generation)) return;
+      const readerRecord = ReaderToolShortcutsReaders.find(
+        item => item.reader === reader
+      );
+      if (!readerRecord || readerRecord.win !== reader._iframeWindow) return;
+
+      const primaryView = reader._internalReader?._primaryView;
+      const secondaryView = reader._internalReader?._secondaryView;
+      const primaryWin = primaryView?._iframeWindow;
+      if (primaryWin) {
+        rtsAttachToWindow(primaryWin, toolbarDoc, generation);
+        if (secondaryView?._iframeWindow) {
+          rtsAttachToWindow(secondaryView._iframeWindow, toolbarDoc, generation);
+        }
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
     }
   }
   catch (error) {
