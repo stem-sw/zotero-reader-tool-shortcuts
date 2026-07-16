@@ -3,6 +3,7 @@ var ReaderToolShortcutsCore;
 var ReaderToolShortcutsPreferencePaneID;
 var ReaderToolShortcutsListener;
 var ReaderToolShortcutsWindows = [];
+var ReaderToolShortcutsReaders = [];
 var ReaderToolShortcutsGeneration = 0;
 var ReaderToolShortcutsShuttingDown = false;
 
@@ -33,6 +34,78 @@ function rtsDetachWindow(win) {
   ReaderToolShortcutsWindows = ReaderToolShortcutsWindows.filter(
     item => item !== record
   );
+}
+
+function rtsIsActive(generation) {
+  return Boolean(
+    !ReaderToolShortcutsShuttingDown &&
+    generation === ReaderToolShortcutsGeneration &&
+    ReaderToolShortcutsCore
+  );
+}
+
+function rtsDetachReader(reader) {
+  const record = ReaderToolShortcutsReaders.find(item => item.reader === reader);
+  if (!record) return;
+  try {
+    record.win.removeEventListener("webviewerloaded", record.handler, true);
+    record.win.removeEventListener("unload", record.unloadHandler, true);
+  }
+  catch (error) {
+    // The outer reader window may already have been destroyed.
+  }
+  ReaderToolShortcutsReaders = ReaderToolShortcutsReaders.filter(
+    item => item !== record
+  );
+}
+
+async function rtsAttachView(reader, view, toolbarDoc, generation) {
+  if (!view) return;
+  try {
+    if (view.initializedPromise) await view.initializedPromise;
+    if (!rtsIsActive(generation)) return;
+    const readerRecord = ReaderToolShortcutsReaders.find(
+      item => item.reader === reader
+    );
+    if (!readerRecord || readerRecord.win !== reader._iframeWindow) return;
+    const currentViews = [
+      reader._internalReader?._primaryView,
+      reader._internalReader?._secondaryView,
+    ];
+    if (!currentViews.includes(view)) return;
+    rtsAttachToWindow(view._iframeWindow, toolbarDoc, generation);
+  }
+  catch (error) {
+    if (Zotero) Zotero.logError(error);
+  }
+}
+
+async function rtsAttachCurrentViews(reader, toolbarDoc, generation) {
+  try {
+    const primaryView = reader._internalReader?._primaryView;
+    const secondaryView = reader._internalReader?._secondaryView;
+    await rtsAttachView(reader, primaryView, toolbarDoc, generation);
+    if (secondaryView) {
+      void rtsAttachView(reader, secondaryView, toolbarDoc, generation);
+    }
+  }
+  catch (error) {
+    if (Zotero) Zotero.logError(error);
+  }
+}
+
+function rtsWatchReaderViews(reader, toolbarDoc, generation) {
+  const win = reader?._iframeWindow;
+  if (!win || ReaderToolShortcutsReaders.some(item => item.reader === reader)) {
+    return;
+  }
+  const handler = () => {
+    void rtsAttachCurrentViews(reader, toolbarDoc, generation);
+  };
+  const unloadHandler = () => rtsDetachReader(reader);
+  win.addEventListener("webviewerloaded", handler, true);
+  win.addEventListener("unload", unloadHandler, true);
+  ReaderToolShortcutsReaders.push({ reader, win, handler, unloadHandler });
 }
 
 function rtsAttachToWindow(win, toolbarDoc, generation) {
@@ -78,20 +151,20 @@ async function rtsAttachToReader(reader, generation) {
   try {
     await reader._waitForReader();
     await reader._initPromise;
-    if (
-      ReaderToolShortcutsShuttingDown ||
-      generation !== ReaderToolShortcutsGeneration ||
-      !ReaderToolShortcutsCore
-    ) {
-      return;
-    }
+    if (!rtsIsActive(generation)) return;
     const toolbarDoc = reader._iframeWindow?.document;
-    for (const win of ReaderToolShortcutsCore.getReaderEventWindows(reader)) {
-      rtsAttachToWindow(win, toolbarDoc, generation);
-    }
+    rtsAttachToWindow(reader._iframeWindow, toolbarDoc, generation);
+    rtsWatchReaderViews(reader, toolbarDoc, generation);
+    await rtsAttachCurrentViews(reader, toolbarDoc, generation);
   }
   catch (error) {
     if (Zotero) Zotero.logError(error);
+  }
+}
+
+function rtsDetachAllReaders() {
+  for (const { reader } of [...ReaderToolShortcutsReaders]) {
+    rtsDetachReader(reader);
   }
 }
 
@@ -146,6 +219,7 @@ function shutdown(data, reason) {
 
   ReaderToolShortcutsShuttingDown = true;
   ReaderToolShortcutsGeneration++;
+  rtsDetachAllReaders();
   rtsDetachAllReaderWindows();
 
   // Zotero removes Reader listeners by plugin ID during plugin shutdown.

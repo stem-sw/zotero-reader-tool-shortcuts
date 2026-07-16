@@ -1,6 +1,6 @@
 {
   "name": "zotero-reader-tool-shortcuts",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Configurable Zotero Reader annotation tool shortcuts",
   "scripts": {

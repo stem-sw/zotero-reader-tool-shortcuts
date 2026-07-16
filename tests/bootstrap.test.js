@@ -40,12 +40,18 @@ function fakeWindow() {
   const listeners = new Map();
   return {
     document: { querySelector: () => null },
-    addEventListener(type, handler) { listeners.set(type, handler); },
-    removeEventListener(type, handler) {
-      if (listeners.get(type) === handler) listeners.delete(type);
+    addEventListener(type, handler) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(handler);
     },
-    emit(type) { listeners.get(type)?.(); },
-    has(type) { return listeners.has(type); },
+    removeEventListener(type, handler) {
+      listeners.get(type)?.delete(handler);
+      if (!listeners.get(type)?.size) listeners.delete(type);
+    },
+    emit(type) {
+      for (const handler of [...(listeners.get(type) || [])]) handler();
+    },
+    has(type) { return Boolean(listeners.get(type)?.size); },
   };
 }
 
@@ -86,6 +92,117 @@ test("shutdown generation change cancels a pending Reader attachment", async () 
 
   assert.equal(context.ReaderToolShortcutsWindows.length, 0);
   assert.equal(outer.has("keydown"), false);
+});
+
+test("waits for PDF view initialization before attaching its event window", async () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const pdf = fakeWindow();
+  let resolveView;
+  const view = {
+    _iframeWindow: null,
+    initializedPromise: new Promise(resolve => { resolveView = resolve; }),
+  };
+  const reader = {
+    _waitForReader: async () => {},
+    _initPromise: Promise.resolve(),
+    _iframeWindow: outer,
+    _internalReader: { _primaryView: view },
+  };
+  context.ReaderToolShortcutsGeneration = 4;
+  context.ReaderToolShortcutsShuttingDown = false;
+
+  let settled = false;
+  const attachment = context.rtsAttachToReader(reader, 4).then(() => {
+    settled = true;
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(settled, false);
+  assert.equal(pdf.has("keydown"), false);
+
+  view._iframeWindow = pdf;
+  resolveView();
+  await attachment;
+
+  assert.equal(pdf.has("keydown"), true);
+});
+
+test("does not attach a pending PDF view after its Reader unloads", async () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const pdf = fakeWindow();
+  let resolveView;
+  const view = {
+    _iframeWindow: null,
+    initializedPromise: new Promise(resolve => { resolveView = resolve; }),
+  };
+  const reader = {
+    _waitForReader: async () => {},
+    _initPromise: Promise.resolve(),
+    _iframeWindow: outer,
+    _internalReader: { _primaryView: view },
+  };
+  context.ReaderToolShortcutsGeneration = 5;
+  context.ReaderToolShortcutsShuttingDown = false;
+
+  const attachment = context.rtsAttachToReader(reader, 5);
+  await new Promise(resolve => setImmediate(resolve));
+  outer.emit("unload");
+  view._iframeWindow = pdf;
+  resolveView();
+  await attachment;
+
+  assert.equal(context.ReaderToolShortcutsReaders.length, 0);
+  assert.equal(pdf.has("keydown"), false);
+});
+
+test("handles destroyed Reader state without rejecting view attachment", async () => {
+  const context = loadBootstrap();
+  context.Zotero.logError = () => {};
+  const reader = {};
+  Object.defineProperty(reader, "_internalReader", {
+    get() { throw new Error("dead object"); },
+  });
+
+  await assert.doesNotReject(
+    context.rtsAttachCurrentViews(reader, {}, 6)
+  );
+});
+
+test("reattaches to a replacement PDF view after webviewerloaded", async () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const firstPdf = fakeWindow();
+  const reader = {
+    _waitForReader: async () => {},
+    _initPromise: Promise.resolve(),
+    _iframeWindow: outer,
+    _internalReader: {
+      _primaryView: {
+        _iframeWindow: firstPdf,
+        initializedPromise: Promise.resolve(),
+      },
+    },
+  };
+  context.ReaderToolShortcutsGeneration = 5;
+  context.ReaderToolShortcutsShuttingDown = false;
+  await context.rtsAttachToReader(reader, 5);
+  assert.equal(firstPdf.has("keydown"), true);
+
+  const replacementPdf = fakeWindow();
+  let resolveReplacement;
+  reader._internalReader._primaryView = {
+    _iframeWindow: replacementPdf,
+    initializedPromise: new Promise(resolve => { resolveReplacement = resolve; }),
+  };
+  outer.emit("webviewerloaded");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(replacementPdf.has("keydown"), false);
+
+  resolveReplacement();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(replacementPdf.has("keydown"), true);
 });
 
 test("initialized Reader attaches both outer and PDF event windows", async () => {
