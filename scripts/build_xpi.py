@@ -37,6 +37,12 @@ for filename in required:
 if not CORE.is_file():
     raise SystemExit("Missing src/core.js")
 
+
+def normalized_text_bytes(path):
+    text = path.read_text(encoding="utf-8")
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+
+
 if DIST.exists():
     shutil.rmtree(DIST)
 DIST.mkdir(parents=True)
@@ -46,11 +52,11 @@ with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compressleve
         info = zipfile.ZipInfo(filename, date_time=(1980, 1, 1, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = 0o644 << 16
-        archive.writestr(info, (ADDON / filename).read_bytes(), compresslevel=9)
+        archive.writestr(info, normalized_text_bytes(ADDON / filename), compresslevel=9)
     info = zipfile.ZipInfo("core.js", date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
     info.external_attr = 0o644 << 16
-    archive.writestr(info, CORE.read_bytes(), compresslevel=9)
+    archive.writestr(info, normalized_text_bytes(CORE), compresslevel=9)
 
 with zipfile.ZipFile(output) as archive:
     names = set(archive.namelist())

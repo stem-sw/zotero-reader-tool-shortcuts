@@ -3,9 +3,9 @@
     "reader-tool-shortcuts@mi-lab.local": {
       "updates": [
         {
-          "version": "1.0.2",
-          "update_link": "https://github.com/stem-sw/zotero-reader-tool-shortcuts/releases/download/v1.0.2/reader-tool-shortcuts-1.0.2.xpi",
-          "update_hash": "sha512:5a7bc71518058bcaa3ac07becc8926f2632f8a7c508399a301d16b27fc978f2965e2c3cd90bb45ec61d866037833657472f59442166fba0dc27702173ddd7ac0",
+          "version": "1.0.3",
+          "update_link": "https://github.com/stem-sw/zotero-reader-tool-shortcuts/releases/download/v1.0.3/reader-tool-shortcuts-1.0.3.xpi",
+          "update_hash": "sha512:d906d77041b3df77d17f963f9987ec2bd076298280baa2aad4742cbb9900ab3a8fb6312ab485daeb96cc4173b73d5e5e75b7a0bc5713ee02f863b9945302b82b",
           "applications": {
             "zotero": {
               "strict_min_version": "9.0",
