@@ -33,6 +33,37 @@
   cursor: pointer;
 }
 
+.text-defaults {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--material-border, #d7d7d7);
+}
+
+.text-defaults h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.text-default-row {
+  display: grid;
+  grid-template-columns: auto 64px auto 90px auto;
+  align-items: center;
+  justify-content: start;
+  gap: 10px;
+}
+
+.text-default-row input,
+.text-default-row select,
+.text-default-row button {
+  min-height: 30px;
+  box-sizing: border-box;
+}
+
+#rts-text-color {
+  width: 56px;
+  padding: 2px;
+}
+
 #rts-status {
   min-height: 1.4em;
   margin: 10px 0 0;

@@ -28,6 +28,9 @@
     },
   ];
 
+  const TEXT_FONT_SIZE_STEPS = [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192];
+  const DEFAULT_TEXT_TOOL = { color: "#2ea8e5", size: 6 };
+
   const MODIFIER_KEYS = new Set([
     "Alt",
     "AltGraph",
@@ -107,6 +110,24 @@
     return true;
   }
 
+  function normalizeTextToolDefaults(defaults = {}) {
+    const color = typeof defaults.color === "string" && /^#[0-9a-f]{6}$/i.test(defaults.color)
+      ? defaults.color.toLowerCase()
+      : DEFAULT_TEXT_TOOL.color;
+    const requestedSize = Number(defaults.size);
+    const size = TEXT_FONT_SIZE_STEPS.includes(requestedSize)
+      ? requestedSize
+      : DEFAULT_TEXT_TOOL.size;
+    return { color, size };
+  }
+
+  function applyTextToolDefaults(reader, defaults) {
+    const textTool = reader?._internalReader?._tools?.text;
+    if (!textTool) return false;
+    Object.assign(textTool, normalizeTextToolDefaults(defaults));
+    return true;
+  }
+
   function duplicateToolForShortcut(shortcuts, currentPref, shortcut) {
     if (!shortcut) return null;
     return TOOLS.find(
@@ -139,6 +160,10 @@
     eventMatchesShortcut,
     toolForEvent,
     activateTool,
+    TEXT_FONT_SIZE_STEPS,
+    DEFAULT_TEXT_TOOL,
+    normalizeTextToolDefaults,
+    applyTextToolDefaults,
     duplicateToolForShortcut,
     isEditableTarget,
     getReaderEventWindows,

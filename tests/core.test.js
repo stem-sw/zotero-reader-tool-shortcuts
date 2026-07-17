@@ -101,6 +101,32 @@ test("does not activate a missing or disabled toolbar button", () => {
   );
 });
 
+test("sets configured text annotation color and size", () => {
+  const textTool = { type: "text", color: "#ffd400", size: 14 };
+  const reader = { _internalReader: { _tools: { text: textTool } } };
+
+  assert.equal(
+    core.applyTextToolDefaults(reader, { color: "#ff6666", size: 18 }),
+    true
+  );
+  assert.deepEqual(textTool, { type: "text", color: "#ff6666", size: 18 });
+});
+
+test("normalizes invalid text defaults to blue and size 6", () => {
+  assert.deepEqual(
+    core.normalizeTextToolDefaults({ color: "not-a-color", size: 7 }),
+    { color: "#2ea8e5", size: 6 }
+  );
+});
+
+test("ignores Readers whose text-tool internals are not ready", () => {
+  assert.equal(core.applyTextToolDefaults(null, { color: "#2ea8e5", size: 6 }), false);
+  assert.equal(
+    core.applyTextToolDefaults({ _internalReader: {} }, { color: "#2ea8e5", size: 6 }),
+    false
+  );
+});
+
 test("detects editable targets so typing is never intercepted", () => {
   let selectorUsed = "";
   assert.equal(core.isEditableTarget({ closest: selector => {

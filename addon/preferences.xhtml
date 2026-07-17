@@ -24,6 +24,32 @@
     <html:button type="button" data-reset="areaShortcut">기본값</html:button>
   </html:div>
 
+  <html:div class="text-defaults">
+    <html:h2>텍스트 상자 기본값</html:h2>
+    <html:div class="text-default-row">
+      <html:label for="rts-text-color">글자색</html:label>
+      <html:input id="rts-text-color" type="color" />
+      <html:label for="rts-text-size">글자 크기</html:label>
+      <html:select id="rts-text-size">
+        <html:option value="6">6</html:option>
+        <html:option value="8">8</html:option>
+        <html:option value="10">10</html:option>
+        <html:option value="12">12</html:option>
+        <html:option value="14">14</html:option>
+        <html:option value="18">18</html:option>
+        <html:option value="24">24</html:option>
+        <html:option value="36">36</html:option>
+        <html:option value="48">48</html:option>
+        <html:option value="64">64</html:option>
+        <html:option value="72">72</html:option>
+        <html:option value="96">96</html:option>
+        <html:option value="144">144</html:option>
+        <html:option value="192">192</html:option>
+      </html:select>
+      <html:button id="rts-reset-text-defaults" type="button">기본값</html:button>
+    </html:div>
+  </html:div>
+
   <html:p id="rts-status" role="status" aria-live="polite"></html:p>
   <html:p class="hint">
     문자 입력 중에는 오작동하지 않도록 검색창, 노트 편집기, 페이지 번호 입력창에서는 단축키를 무시합니다.

@@ -33,3 +33,18 @@ test("preference pane source is a raw XUL fragment, not a complete XML document"
   assert.match(pane, /^<vbox\b/);
   assert.match(pane, /id="zotero-prefpane-reader-tool-shortcuts"/);
 });
+
+test("preference pane exposes text color and font-size controls", () => {
+  const panePath = path.join(__dirname, "..", "addon", "preferences.xhtml");
+  const pane = fs.readFileSync(panePath, "utf8");
+  assert.match(pane, /id="rts-text-color"[^>]*type="color"/);
+  assert.match(pane, /id="rts-text-size"/);
+  assert.match(pane, /value="192"/);
+});
+
+test("text annotation preference defaults remain blue and size 6", () => {
+  const prefsPath = path.join(__dirname, "..", "addon", "prefs.js");
+  const prefs = fs.readFileSync(prefsPath, "utf8");
+  assert.match(prefs, /textColor", "#2ea8e5"/);
+  assert.match(prefs, /textSize", 6\)/);
+});

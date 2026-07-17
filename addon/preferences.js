@@ -36,6 +36,30 @@
     if (input) input.value = core.formatShortcut(getValue(name));
   }
 
+  function refreshTextDefaults() {
+    const defaults = core.normalizeTextToolDefaults({
+      color: getValue("textColor"),
+      size: getValue("textSize"),
+    });
+    const colorInput = document.getElementById("rts-text-color");
+    const sizeSelect = document.getElementById("rts-text-size");
+    if (colorInput) colorInput.value = defaults.color;
+    if (sizeSelect) sizeSelect.value = String(defaults.size);
+  }
+
+  function saveTextDefaults() {
+    const colorInput = document.getElementById("rts-text-color");
+    const sizeSelect = document.getElementById("rts-text-size");
+    const defaults = core.normalizeTextToolDefaults({
+      color: colorInput?.value,
+      size: sizeSelect?.value,
+    });
+    setValue("textColor", defaults.color);
+    setValue("textSize", defaults.size);
+    refreshTextDefaults();
+    setStatus(`텍스트 상자 기본값을 ${defaults.color}, 크기 ${defaults.size}로 저장했습니다.`);
+  }
+
   function hasDuplicate(name, shortcut) {
     const shortcuts = {};
     for (const tool of core.TOOLS) {
@@ -85,6 +109,16 @@
         input.select();
       });
     }
+
+    refreshTextDefaults();
+    document.getElementById("rts-text-color")?.addEventListener("change", saveTextDefaults);
+    document.getElementById("rts-text-size")?.addEventListener("change", saveTextDefaults);
+    document.getElementById("rts-reset-text-defaults")?.addEventListener("click", () => {
+      setValue("textColor", core.DEFAULT_TEXT_TOOL.color);
+      setValue("textSize", core.DEFAULT_TEXT_TOOL.size);
+      refreshTextDefaults();
+      setStatus("텍스트 상자 기본값을 파란색, 크기 6으로 복원했습니다.");
+    });
 
     for (const button of document.querySelectorAll("button[data-clear]")) {
       button.addEventListener("click", () => {

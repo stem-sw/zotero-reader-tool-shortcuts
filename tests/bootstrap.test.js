@@ -31,6 +31,8 @@ function loadBootstrap() {
     isEditableTarget: () => false,
     toolForEvent: () => null,
     activateTool: () => false,
+    normalizeTextToolDefaults: defaults => defaults,
+    applyTextToolDefaults: () => false,
   };
   context.ReaderToolShortcutsSetInterval = setInterval;
   context.ReaderToolShortcutsClearInterval = clearInterval;
@@ -214,6 +216,8 @@ test("startup cancelled during preference registration installs no Reader handle
           isEditableTarget: () => false,
           toolForEvent: () => null,
           activateTool: () => false,
+          normalizeTextToolDefaults: defaults => defaults,
+          applyTextToolDefaults: () => false,
         };
       },
     },
@@ -241,6 +245,7 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
   let intervalStartCount = 0;
   const zotero = {
     initializationPromise: Promise.resolve(),
+    Prefs: { get: () => undefined },
     PreferencePanes: { register: async () => "pane" },
     Reader: { _readers: [], registerEventListener() {} },
     debug() {},
@@ -266,6 +271,8 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
           isEditableTarget: () => false,
           toolForEvent: () => null,
           activateTool: () => false,
+          normalizeTextToolDefaults: defaults => defaults,
+          applyTextToolDefaults: () => false,
         };
       },
     },
@@ -330,6 +337,59 @@ test("repeated scans deduplicate listeners by window identity", () => {
   assert.equal(outer.count("keydown"), 1);
   assert.equal(pdf.count("keydown"), 1);
   assert.equal(context.ReaderToolShortcutsWindows.length, 2);
+});
+
+test("Reader scan does not overwrite later manual changes when settings are unchanged", () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const internalReader = { _tools: { text: { color: "#ffd400", size: 14 } } };
+  context.Zotero.Prefs.get = key => key.endsWith("textColor") ? "#2ea8e5" : 6;
+  context.Zotero.Reader._readers = [{
+    _iframeWindow: outer,
+    _internalReader: internalReader,
+  }];
+  let applications = 0;
+  context.ReaderToolShortcutsCore.applyTextToolDefaults = (reader, defaults) => {
+    applications++;
+    Object.assign(reader._internalReader._tools.text, defaults);
+    return true;
+  };
+  activate(context, 41);
+
+  context.rtsScanReaders(41);
+  internalReader._tools.text.color = "#ff6666";
+  internalReader._tools.text.size = 10;
+  context.rtsScanReaders(41);
+
+  assert.equal(applications, 1);
+  assert.deepEqual(internalReader._tools.text, { color: "#ff6666", size: 10 });
+});
+
+test("Reader scan reapplies text defaults after a preference change", () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const internalReader = { _tools: { text: { color: "#ffd400", size: 14 } } };
+  const prefs = { textColor: "#2ea8e5", textSize: 6 };
+  context.Zotero.Prefs.get = key => prefs[key.split(".").pop()];
+  context.Zotero.Reader._readers = [{
+    _iframeWindow: outer,
+    _internalReader: internalReader,
+  }];
+  let applications = 0;
+  context.ReaderToolShortcutsCore.applyTextToolDefaults = (reader, defaults) => {
+    applications++;
+    Object.assign(reader._internalReader._tools.text, defaults);
+    return true;
+  };
+  activate(context, 42);
+
+  context.rtsScanReaders(42);
+  prefs.textColor = "#a28ae5";
+  prefs.textSize = 18;
+  context.rtsScanReaders(42);
+
+  assert.equal(applications, 2);
+  assert.deepEqual(internalReader._tools.text, { color: "#a28ae5", size: 18 });
 });
 
 test("Reader scan tolerates a destroyed Reader wrapper", () => {

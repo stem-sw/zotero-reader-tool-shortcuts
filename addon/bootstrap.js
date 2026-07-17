@@ -9,6 +9,7 @@ var ReaderToolShortcutsScanTimer = null;
 var ReaderToolShortcutsScanGeneration = null;
 var ReaderToolShortcutsSetInterval;
 var ReaderToolShortcutsClearInterval;
+var ReaderToolShortcutsConfiguredReaders = new WeakMap();
 
 const RTS_PREF_BRANCH = "extensions.reader-tool-shortcuts.";
 
@@ -22,6 +23,13 @@ function rtsGetShortcuts() {
     values[tool.pref] = Zotero.Prefs.get(RTS_PREF_BRANCH + tool.pref) || "";
   }
   return values;
+}
+
+function rtsGetTextToolDefaults() {
+  return ReaderToolShortcutsCore.normalizeTextToolDefaults({
+    color: Zotero.Prefs.get(RTS_PREF_BRANCH + "textColor"),
+    size: Zotero.Prefs.get(RTS_PREF_BRANCH + "textSize"),
+  });
 }
 
 function rtsDetachWindow(win) {
@@ -129,9 +137,19 @@ function rtsScanReaders(generation) {
   }
 
   const liveWindows = new Set();
+  const textDefaults = rtsGetTextToolDefaults();
+  const textDefaultsSignature = `${textDefaults.color}:${textDefaults.size}`;
   let complete = true;
   for (const reader of readers) {
     try {
+      const internalReader = reader?._internalReader;
+      if (
+        internalReader &&
+        ReaderToolShortcutsConfiguredReaders.get(internalReader) !== textDefaultsSignature &&
+        ReaderToolShortcutsCore.applyTextToolDefaults(reader, textDefaults)
+      ) {
+        ReaderToolShortcutsConfiguredReaders.set(internalReader, textDefaultsSignature);
+      }
       const toolbarDoc = reader?._iframeWindow?.document;
       if (!toolbarDoc) continue;
       const windows = [
