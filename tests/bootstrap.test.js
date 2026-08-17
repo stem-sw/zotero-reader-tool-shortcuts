@@ -33,6 +33,11 @@ function loadBootstrap() {
     activateTool: () => false,
     normalizeTextToolDefaults: defaults => defaults,
     applyTextToolDefaults: () => false,
+    normalizeTextMaxWidth: value => Number(value) || 900,
+    createTextWidthAdjuster: (adjuster, width) => Object.assign(
+      (annotation, options) => adjuster(annotation, options),
+      { _rtsTextMaxWidth: width }
+    ),
   };
   context.ReaderToolShortcutsSetInterval = setInterval;
   context.ReaderToolShortcutsClearInterval = clearInterval;
@@ -218,6 +223,11 @@ test("startup cancelled during preference registration installs no Reader handle
           activateTool: () => false,
           normalizeTextToolDefaults: defaults => defaults,
           applyTextToolDefaults: () => false,
+          normalizeTextMaxWidth: value => Number(value) || 900,
+          createTextWidthAdjuster: (adjuster, width) => Object.assign(
+            (annotation, options) => adjuster(annotation, options),
+            { _rtsTextMaxWidth: width }
+          ),
         };
       },
     },
@@ -273,6 +283,11 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
           activateTool: () => false,
           normalizeTextToolDefaults: defaults => defaults,
           applyTextToolDefaults: () => false,
+          normalizeTextMaxWidth: value => Number(value) || 900,
+          createTextWidthAdjuster: (adjuster, width) => Object.assign(
+            (annotation, options) => adjuster(annotation, options),
+            { _rtsTextMaxWidth: width }
+          ),
         };
       },
     },
@@ -390,6 +405,122 @@ test("Reader scan reapplies text defaults after a preference change", () => {
 
   assert.equal(applications, 2);
   assert.deepEqual(internalReader._tools.text, { color: "#a28ae5", size: 18 });
+});
+
+test("resolves the current PDF page viewBox for text-width fitting", () => {
+  const context = loadBootstrap();
+  const viewBox = [0, 0, 600, 800];
+  const reader = {
+    _internalReader: {
+      _primaryView: {
+        _iframeWindow: {
+          PDFViewerApplication: {
+            pdfViewer: { _pages: [{ viewport: { viewBox } }] },
+          },
+        },
+      },
+    },
+  };
+
+  assert.equal(
+    context.rtsGetTextPageRect(reader, { position: { pageIndex: 0 } }),
+    viewBox
+  );
+  assert.equal(context.rtsGetTextPageRect(reader, { position: { pageIndex: 1 } }), null);
+});
+
+test("Reader scan patches Zotero's text position adjuster with width 900", () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const original = () => ({ rects: [[0, 0, 300, 10]] });
+  const manager = { _adjustTextAnnotationPosition: original };
+  context.Zotero.Prefs.get = key => key.endsWith("textMaxWidth") ? 900 : "";
+  context.Zotero.Reader._readers = [{
+    _iframeWindow: outer,
+    _internalReader: { _annotationManager: manager },
+  }];
+  activate(context, 43);
+
+  context.rtsScanReaders(43);
+
+  assert.notEqual(manager._adjustTextAnnotationPosition, original);
+  assert.equal(manager._adjustTextAnnotationPosition._rtsTextMaxWidth, 900);
+});
+
+test("text-width patch clones generated arguments into the Reader window", () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const original = () => ({ rects: [[0, 0, 300, 10]] });
+  const manager = { _adjustTextAnnotationPosition: original };
+  let cloneForReader;
+  context.Components = {
+    utils: {
+      cloneInto(value, target) {
+        return { value, target };
+      },
+    },
+  };
+  context.ReaderToolShortcutsCore.createTextWidthAdjuster = (
+    adjuster,
+    width,
+    getPageRect,
+    clone
+  ) => {
+    cloneForReader = clone;
+    return Object.assign(
+      (annotation, options) => adjuster(annotation, options),
+      { _rtsTextMaxWidth: width }
+    );
+  };
+  const reader = {
+    _iframeWindow: outer,
+    _internalReader: { _annotationManager: manager },
+  };
+
+  context.rtsPatchTextWidth(reader, 900);
+
+  assert.equal(typeof cloneForReader, "function");
+  const value = { position: {} };
+  const cloned = cloneForReader(value);
+  assert.equal(cloned.value, value);
+  assert.equal(cloned.target, outer);
+});
+
+test("restoring text width patches reinstates Zotero's native adjuster", () => {
+  const context = loadBootstrap();
+  const original = () => ({ rects: [[0, 0, 300, 10]] });
+  const manager = { _adjustTextAnnotationPosition: original };
+  const reader = { _internalReader: { _annotationManager: manager } };
+
+  context.rtsPatchTextWidth(reader, 900);
+  assert.notEqual(manager._adjustTextAnnotationPosition, original);
+
+  context.rtsRestoreTextWidthPatches();
+
+  assert.equal(manager._adjustTextAnnotationPosition, original);
+  assert.equal(context.ReaderToolShortcutsTextWidthPatches.length, 0);
+});
+
+test("Reader scan restores and forgets a closed Reader's text width patch", () => {
+  const context = loadBootstrap();
+  const original = () => ({ rects: [[0, 0, 300, 10]] });
+  const manager = { _adjustTextAnnotationPosition: original };
+  const reader = {
+    _iframeWindow: fakeWindow(),
+    _internalReader: { _annotationManager: manager },
+  };
+  context.Zotero.Prefs.get = key => key.endsWith("textMaxWidth") ? 900 : "";
+  context.Zotero.Reader._readers = [reader];
+  activate(context, 44);
+
+  context.rtsScanReaders(44);
+  assert.notEqual(manager._adjustTextAnnotationPosition, original);
+
+  context.Zotero.Reader._readers = [];
+  context.rtsScanReaders(44);
+
+  assert.equal(manager._adjustTextAnnotationPosition, original);
+  assert.equal(context.ReaderToolShortcutsTextWidthPatches.length, 0);
 });
 
 test("Reader scan tolerates a destroyed Reader wrapper", () => {

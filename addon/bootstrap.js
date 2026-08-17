@@ -10,6 +10,7 @@ var ReaderToolShortcutsScanGeneration = null;
 var ReaderToolShortcutsSetInterval;
 var ReaderToolShortcutsClearInterval;
 var ReaderToolShortcutsConfiguredReaders = new WeakMap();
+var ReaderToolShortcutsTextWidthPatches = [];
 
 const RTS_PREF_BRANCH = "extensions.reader-tool-shortcuts.";
 
@@ -29,6 +30,77 @@ function rtsGetTextToolDefaults() {
   return ReaderToolShortcutsCore.normalizeTextToolDefaults({
     color: Zotero.Prefs.get(RTS_PREF_BRANCH + "textColor"),
     size: Zotero.Prefs.get(RTS_PREF_BRANCH + "textSize"),
+  });
+}
+
+function rtsGetTextMaxWidth() {
+  return ReaderToolShortcutsCore.normalizeTextMaxWidth(
+    Zotero.Prefs.get(RTS_PREF_BRANCH + "textMaxWidth")
+  );
+}
+
+function rtsGetTextPageRect(reader, annotation) {
+  const pageIndex = Number(annotation?.position?.pageIndex);
+  if (!Number.isInteger(pageIndex) || pageIndex < 0) return null;
+  const viewBox = reader?._internalReader?._primaryView?._iframeWindow
+    ?.PDFViewerApplication?.pdfViewer?._pages?.[pageIndex]?.viewport?.viewBox;
+  return Array.isArray(viewBox) ? viewBox : null;
+}
+
+function rtsPatchTextWidth(reader, maxWidth) {
+  const manager = reader?._internalReader?._annotationManager;
+  const current = manager?._adjustTextAnnotationPosition;
+  if (!manager || typeof current !== "function") return false;
+
+  const existing = ReaderToolShortcutsTextWidthPatches.find(
+    record => record.manager === manager
+  );
+  if (existing && existing.width === maxWidth && current === existing.wrapped) {
+    return true;
+  }
+  if (existing) {
+    if (current === existing.wrapped) {
+      manager._adjustTextAnnotationPosition = existing.original;
+    }
+    ReaderToolShortcutsTextWidthPatches = ReaderToolShortcutsTextWidthPatches.filter(
+      record => record !== existing
+    );
+  }
+
+  const original = manager._adjustTextAnnotationPosition;
+  const wrapped = ReaderToolShortcutsCore.createTextWidthAdjuster(
+    original,
+    maxWidth,
+    annotation => rtsGetTextPageRect(reader, annotation),
+    value => Components.utils.cloneInto(value, reader._iframeWindow)
+  );
+  manager._adjustTextAnnotationPosition = wrapped;
+  ReaderToolShortcutsTextWidthPatches.push({ manager, original, wrapped, width: maxWidth });
+  return true;
+}
+
+function rtsRestoreTextWidthPatches() {
+  for (const { manager, original, wrapped } of ReaderToolShortcutsTextWidthPatches) {
+    try {
+      if (manager._adjustTextAnnotationPosition === wrapped) {
+        manager._adjustTextAnnotationPosition = original;
+      }
+    }
+    catch (error) {}
+  }
+  ReaderToolShortcutsTextWidthPatches = [];
+}
+
+function rtsRestoreStaleTextWidthPatches(liveManagers) {
+  ReaderToolShortcutsTextWidthPatches = ReaderToolShortcutsTextWidthPatches.filter(record => {
+    if (liveManagers.has(record.manager)) return true;
+    try {
+      if (record.manager._adjustTextAnnotationPosition === record.wrapped) {
+        record.manager._adjustTextAnnotationPosition = record.original;
+      }
+    }
+    catch (error) {}
+    return false;
   });
 }
 
@@ -137,12 +209,17 @@ function rtsScanReaders(generation) {
   }
 
   const liveWindows = new Set();
+  const liveManagers = new Set();
   const textDefaults = rtsGetTextToolDefaults();
   const textDefaultsSignature = `${textDefaults.color}:${textDefaults.size}`;
+  const textMaxWidth = rtsGetTextMaxWidth();
   let complete = true;
   for (const reader of readers) {
     try {
       const internalReader = reader?._internalReader;
+      const annotationManager = internalReader?._annotationManager;
+      if (annotationManager) liveManagers.add(annotationManager);
+      rtsPatchTextWidth(reader, textMaxWidth);
       if (
         internalReader &&
         ReaderToolShortcutsConfiguredReaders.get(internalReader) !== textDefaultsSignature &&
@@ -168,6 +245,7 @@ function rtsScanReaders(generation) {
   }
 
   if (complete) {
+    rtsRestoreStaleTextWidthPatches(liveManagers);
     for (const record of [...ReaderToolShortcutsWindows]) {
       if (!liveWindows.has(record.win)) rtsDetachWindow(record.win);
     }
@@ -275,6 +353,7 @@ function shutdown(data, reason) {
   if (reason === APP_SHUTDOWN) return;
 
   rtsDetachAllReaderWindows();
+  rtsRestoreTextWidthPatches();
 
   // Zotero removes Reader listeners by plugin ID during plugin shutdown.
   // Avoid calling unregisterEventListener here because Zotero 9.0.6's current

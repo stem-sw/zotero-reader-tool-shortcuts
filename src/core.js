@@ -30,6 +30,7 @@
 
   const TEXT_FONT_SIZE_STEPS = [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192];
   const DEFAULT_TEXT_TOOL = { color: "#2ea8e5", size: 6 };
+  const DEFAULT_TEXT_MAX_WIDTH = 900;
 
   const MODIFIER_KEYS = new Set([
     "Alt",
@@ -128,6 +129,122 @@
     return true;
   }
 
+  function normalizeTextMaxWidth(value) {
+    const width = Number(value);
+    return Number.isFinite(width) && width >= 100 && width <= 2000
+      ? Math.round(width)
+      : DEFAULT_TEXT_MAX_WIDTH;
+  }
+
+  function createTextWidthAdjuster(nativeAdjust, maxWidth, getPageRect, cloneForReader) {
+    const normalizedMaxWidth = normalizeTextMaxWidth(maxWidth);
+    const toReader = typeof cloneForReader === "function" ? cloneForReader : value => value;
+    const callNativeWithGeneratedArguments = function (context, annotation, options) {
+      return nativeAdjust.call(context, toReader(annotation), toReader(options));
+    };
+    const wrapped = function (annotation, options = {}) {
+      if (!options.adjustSingleLineWidth || !options.enableSingleLineMaxWidth) {
+        return nativeAdjust.call(this, annotation, options);
+      }
+
+      const sourceRect = annotation?.position?.rects?.[0];
+      const sourceFontSize = Number(annotation?.position?.fontSize);
+      const sourceIsMultiline = sourceRect && Number.isFinite(sourceFontSize)
+        && sourceRect[3] - sourceRect[1] >= 2 * sourceFontSize;
+      if (sourceIsMultiline) {
+        return nativeAdjust.call(this, annotation, options);
+      }
+
+      const pageRect = typeof getPageRect === "function" ? getPageRect(annotation) : null;
+      const rotation = ((Number(annotation?.position?.rotation) || 0) % 360 + 360) % 360;
+      if (
+        rotation === 0 &&
+        Array.isArray(pageRect) && pageRect.length === 4 && sourceRect &&
+        pageRect.every(value => Number.isFinite(value))
+      ) {
+        const borderPadding = 5;
+        const availablePageWidth = pageRect[2] - pageRect[0] - 2 * borderPadding;
+        const probeAnnotation = {
+          ...annotation,
+          position: JSON.parse(JSON.stringify(annotation.position)),
+        };
+        const probeRect = probeAnnotation.position.rects[0];
+        const sourceWidth = probeRect[2] - probeRect[0];
+        probeRect[0] = pageRect[0] + borderPadding;
+        probeRect[2] = probeRect[0] + sourceWidth;
+
+        const measuredOptions = {
+          ...options,
+          enableSingleLineMaxWidth: false,
+        };
+        const measured = callNativeWithGeneratedArguments(
+          this,
+          probeAnnotation,
+          measuredOptions
+        );
+        const measuredRect = measured?.rects?.[0];
+        if (measuredRect && availablePageWidth > 0) {
+          const measuredWidth = measuredRect[2] - measuredRect[0];
+          const targetWidth = Math.min(measuredWidth, normalizedMaxWidth, availablePageWidth);
+          if (Number.isFinite(targetWidth) && targetWidth > 0) {
+            const fittedAnnotation = {
+              ...annotation,
+              position: JSON.parse(JSON.stringify(annotation.position)),
+            };
+            const fittedRect = fittedAnnotation.position.rects[0];
+            fittedRect[2] = fittedRect[0] + targetWidth;
+            const fittedOptions = {
+              ...options,
+              adjustSingleLineWidth: false,
+              enableSingleLineMaxWidth: false,
+            };
+            return callNativeWithGeneratedArguments(
+              this,
+              fittedAnnotation,
+              fittedOptions
+            );
+          }
+        }
+      }
+
+      const uncappedOptions = {
+        ...options,
+        enableSingleLineMaxWidth: false,
+      };
+      const uncapped = callNativeWithGeneratedArguments(
+        this,
+        annotation,
+        uncappedOptions
+      );
+      const rect = uncapped?.rects?.[0];
+      const fontSize = Number(annotation?.position?.fontSize);
+      const isMultiline = rect && Number.isFinite(fontSize)
+        && rect[3] - rect[1] >= 2 * fontSize;
+      if (!rect || isMultiline || rect[2] - rect[0] <= normalizedMaxWidth) {
+        return uncapped;
+      }
+
+      const cappedAnnotation = {
+        ...annotation,
+        position: JSON.parse(JSON.stringify(uncapped)),
+      };
+      const cappedRect = cappedAnnotation.position.rects[0];
+      cappedRect[2] = cappedRect[0] + normalizedMaxWidth;
+      const cappedOptions = {
+        ...options,
+        adjustSingleLineWidth: false,
+        enableSingleLineMaxWidth: false,
+      };
+      return callNativeWithGeneratedArguments(
+        this,
+        cappedAnnotation,
+        cappedOptions
+      );
+    };
+    wrapped._rtsTextMaxWidth = normalizedMaxWidth;
+    return wrapped;
+  }
+
   function duplicateToolForShortcut(shortcuts, currentPref, shortcut) {
     if (!shortcut) return null;
     return TOOLS.find(
@@ -162,8 +279,11 @@
     activateTool,
     TEXT_FONT_SIZE_STEPS,
     DEFAULT_TEXT_TOOL,
+    DEFAULT_TEXT_MAX_WIDTH,
     normalizeTextToolDefaults,
     applyTextToolDefaults,
+    normalizeTextMaxWidth,
+    createTextWidthAdjuster,
     duplicateToolForShortcut,
     isEditableTarget,
     getReaderEventWindows,
