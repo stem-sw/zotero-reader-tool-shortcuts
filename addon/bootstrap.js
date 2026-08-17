@@ -71,7 +71,8 @@ function rtsPatchTextWidth(reader, maxWidth) {
   const wrapped = ReaderToolShortcutsCore.createTextWidthAdjuster(
     original,
     maxWidth,
-    annotation => rtsGetTextPageRect(reader, annotation)
+    annotation => rtsGetTextPageRect(reader, annotation),
+    value => Components.utils.cloneInto(value, reader._iframeWindow)
   );
   manager._adjustTextAnnotationPosition = wrapped;
   ReaderToolShortcutsTextWidthPatches.push({ manager, original, wrapped, width: maxWidth });

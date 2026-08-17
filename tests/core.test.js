@@ -204,6 +204,36 @@ test("moves a pasted text box left instead of collapsing it to the right-edge re
   assert.equal(calls.at(-1).options.adjustSingleLineWidth, false);
 });
 
+test("clones generated width probes into the Zotero Reader realm", () => {
+  const readerRealm = new WeakSet();
+  const cloneForReader = value => {
+    const clone = structuredClone(value);
+    readerRealm.add(clone);
+    return clone;
+  };
+  const nativeAdjust = (annotation, options) => {
+    assert.equal(readerRealm.has(annotation), true, "annotation must belong to Reader realm");
+    assert.equal(readerRealm.has(options), true, "options must belong to Reader realm");
+    return { ...structuredClone(annotation.position), rects: [[5, 20, 595, 50]] };
+  };
+  const adjust = core.createTextWidthAdjuster(
+    nativeAdjust,
+    900,
+    () => [0, 0, 600, 800],
+    cloneForReader
+  );
+
+  const result = adjust(
+    {
+      comment: "a long pasted sentence",
+      position: { pageIndex: 0, fontSize: 6, rotation: 0, rects: [[570, 20, 600, 26]] },
+    },
+    { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true }
+  );
+
+  assert.deepEqual(result.rects, [[5, 20, 595, 50]]);
+});
+
 test("leaves a multiline text annotation uncapped like Zotero", () => {
   let calls = 0;
   const nativeAdjust = (annotation) => {

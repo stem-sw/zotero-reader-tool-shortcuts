@@ -447,6 +447,45 @@ test("Reader scan patches Zotero's text position adjuster with width 900", () =>
   assert.equal(manager._adjustTextAnnotationPosition._rtsTextMaxWidth, 900);
 });
 
+test("text-width patch clones generated arguments into the Reader window", () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const original = () => ({ rects: [[0, 0, 300, 10]] });
+  const manager = { _adjustTextAnnotationPosition: original };
+  let cloneForReader;
+  context.Components = {
+    utils: {
+      cloneInto(value, target) {
+        return { value, target };
+      },
+    },
+  };
+  context.ReaderToolShortcutsCore.createTextWidthAdjuster = (
+    adjuster,
+    width,
+    getPageRect,
+    clone
+  ) => {
+    cloneForReader = clone;
+    return Object.assign(
+      (annotation, options) => adjuster(annotation, options),
+      { _rtsTextMaxWidth: width }
+    );
+  };
+  const reader = {
+    _iframeWindow: outer,
+    _internalReader: { _annotationManager: manager },
+  };
+
+  context.rtsPatchTextWidth(reader, 900);
+
+  assert.equal(typeof cloneForReader, "function");
+  const value = { position: {} };
+  const cloned = cloneForReader(value);
+  assert.equal(cloned.value, value);
+  assert.equal(cloned.target, outer);
+});
+
 test("restoring text width patches reinstates Zotero's native adjuster", () => {
   const context = loadBootstrap();
   const original = () => ({ rects: [[0, 0, 300, 10]] });

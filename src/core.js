@@ -136,8 +136,12 @@
       : DEFAULT_TEXT_MAX_WIDTH;
   }
 
-  function createTextWidthAdjuster(nativeAdjust, maxWidth, getPageRect) {
+  function createTextWidthAdjuster(nativeAdjust, maxWidth, getPageRect, cloneForReader) {
     const normalizedMaxWidth = normalizeTextMaxWidth(maxWidth);
+    const toReader = typeof cloneForReader === "function" ? cloneForReader : value => value;
+    const callNativeWithGeneratedArguments = function (context, annotation, options) {
+      return nativeAdjust.call(context, toReader(annotation), toReader(options));
+    };
     const wrapped = function (annotation, options = {}) {
       if (!options.adjustSingleLineWidth || !options.enableSingleLineMaxWidth) {
         return nativeAdjust.call(this, annotation, options);
@@ -169,10 +173,15 @@
         probeRect[0] = pageRect[0] + borderPadding;
         probeRect[2] = probeRect[0] + sourceWidth;
 
-        const measured = nativeAdjust.call(this, probeAnnotation, {
+        const measuredOptions = {
           ...options,
           enableSingleLineMaxWidth: false,
-        });
+        };
+        const measured = callNativeWithGeneratedArguments(
+          this,
+          probeAnnotation,
+          measuredOptions
+        );
         const measuredRect = measured?.rects?.[0];
         if (measuredRect && availablePageWidth > 0) {
           const measuredWidth = measuredRect[2] - measuredRect[0];
@@ -184,19 +193,29 @@
             };
             const fittedRect = fittedAnnotation.position.rects[0];
             fittedRect[2] = fittedRect[0] + targetWidth;
-            return nativeAdjust.call(this, fittedAnnotation, {
+            const fittedOptions = {
               ...options,
               adjustSingleLineWidth: false,
               enableSingleLineMaxWidth: false,
-            });
+            };
+            return callNativeWithGeneratedArguments(
+              this,
+              fittedAnnotation,
+              fittedOptions
+            );
           }
         }
       }
 
-      const uncapped = nativeAdjust.call(this, annotation, {
+      const uncappedOptions = {
         ...options,
         enableSingleLineMaxWidth: false,
-      });
+      };
+      const uncapped = callNativeWithGeneratedArguments(
+        this,
+        annotation,
+        uncappedOptions
+      );
       const rect = uncapped?.rects?.[0];
       const fontSize = Number(annotation?.position?.fontSize);
       const isMultiline = rect && Number.isFinite(fontSize)
@@ -211,11 +230,16 @@
       };
       const cappedRect = cappedAnnotation.position.rects[0];
       cappedRect[2] = cappedRect[0] + normalizedMaxWidth;
-      return nativeAdjust.call(this, cappedAnnotation, {
+      const cappedOptions = {
         ...options,
         adjustSingleLineWidth: false,
         enableSingleLineMaxWidth: false,
-      });
+      };
+      return callNativeWithGeneratedArguments(
+        this,
+        cappedAnnotation,
+        cappedOptions
+      );
     };
     wrapped._rtsTextMaxWidth = normalizedMaxWidth;
     return wrapped;
