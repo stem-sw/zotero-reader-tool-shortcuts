@@ -30,6 +30,7 @@
 
   const TEXT_FONT_SIZE_STEPS = [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192];
   const DEFAULT_TEXT_TOOL = { color: "#2ea8e5", size: 6 };
+  const DEFAULT_TEXT_MAX_WIDTH = 900;
 
   const MODIFIER_KEYS = new Set([
     "Alt",
@@ -128,6 +129,48 @@
     return true;
   }
 
+  function normalizeTextMaxWidth(value) {
+    const width = Number(value);
+    return Number.isFinite(width) && width >= 100 && width <= 2000
+      ? Math.round(width)
+      : DEFAULT_TEXT_MAX_WIDTH;
+  }
+
+  function createTextWidthAdjuster(nativeAdjust, maxWidth) {
+    const normalizedMaxWidth = normalizeTextMaxWidth(maxWidth);
+    const wrapped = function (annotation, options = {}) {
+      if (!options.adjustSingleLineWidth || !options.enableSingleLineMaxWidth) {
+        return nativeAdjust.call(this, annotation, options);
+      }
+
+      const uncapped = nativeAdjust.call(this, annotation, {
+        ...options,
+        enableSingleLineMaxWidth: false,
+      });
+      const rect = uncapped?.rects?.[0];
+      const fontSize = Number(annotation?.position?.fontSize);
+      const isMultiline = rect && Number.isFinite(fontSize)
+        && rect[3] - rect[1] >= 2 * fontSize;
+      if (!rect || isMultiline || rect[2] - rect[0] <= normalizedMaxWidth) {
+        return uncapped;
+      }
+
+      const cappedAnnotation = {
+        ...annotation,
+        position: JSON.parse(JSON.stringify(uncapped)),
+      };
+      const cappedRect = cappedAnnotation.position.rects[0];
+      cappedRect[2] = cappedRect[0] + normalizedMaxWidth;
+      return nativeAdjust.call(this, cappedAnnotation, {
+        ...options,
+        adjustSingleLineWidth: false,
+        enableSingleLineMaxWidth: false,
+      });
+    };
+    wrapped._rtsTextMaxWidth = normalizedMaxWidth;
+    return wrapped;
+  }
+
   function duplicateToolForShortcut(shortcuts, currentPref, shortcut) {
     if (!shortcut) return null;
     return TOOLS.find(
@@ -162,8 +205,11 @@
     activateTool,
     TEXT_FONT_SIZE_STEPS,
     DEFAULT_TEXT_TOOL,
+    DEFAULT_TEXT_MAX_WIDTH,
     normalizeTextToolDefaults,
     applyTextToolDefaults,
+    normalizeTextMaxWidth,
+    createTextWidthAdjuster,
     duplicateToolForShortcut,
     isEditableTarget,
     getReaderEventWindows,
