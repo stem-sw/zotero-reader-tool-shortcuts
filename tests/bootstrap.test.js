@@ -407,6 +407,28 @@ test("Reader scan reapplies text defaults after a preference change", () => {
   assert.deepEqual(internalReader._tools.text, { color: "#a28ae5", size: 18 });
 });
 
+test("resolves the current PDF page viewBox for text-width fitting", () => {
+  const context = loadBootstrap();
+  const viewBox = [0, 0, 600, 800];
+  const reader = {
+    _internalReader: {
+      _primaryView: {
+        _iframeWindow: {
+          PDFViewerApplication: {
+            pdfViewer: { _pages: [{ viewport: { viewBox } }] },
+          },
+        },
+      },
+    },
+  };
+
+  assert.equal(
+    context.rtsGetTextPageRect(reader, { position: { pageIndex: 0 } }),
+    viewBox
+  );
+  assert.equal(context.rtsGetTextPageRect(reader, { position: { pageIndex: 1 } }), null);
+});
+
 test("Reader scan patches Zotero's text position adjuster with width 900", () => {
   const context = loadBootstrap();
   const outer = fakeWindow();
