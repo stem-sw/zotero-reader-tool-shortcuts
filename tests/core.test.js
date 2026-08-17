@@ -171,49 +171,16 @@ test("keeps a shorter text annotation at its measured width", () => {
   assert.equal(result.rects[0][2] - result.rects[0][0], 700);
 });
 
-test("moves a pasted text box left instead of collapsing it to the right-edge remainder", () => {
-  const pageRect = [20, 0, 620, 800];
-  const calls = [];
-  const nativeAdjust = (annotation, options) => {
-    calls.push({ annotation: structuredClone(annotation), options: { ...options } });
-    const rect = annotation.position.rects[0];
-    const x = rect[0];
-    if (options.adjustSingleLineWidth === false) {
-      const width = rect[2] - rect[0];
-      const left = Math.min(x, pageRect[2] - 5 - width);
-      return { ...structuredClone(annotation.position), rects: [[left, 20, left + width, 50]] };
-    }
-    // Zotero's uncapped measurement collapses to the tiny remaining width when
-    // the annotation starts near the right page edge.
-    const width = x >= 550 ? 45 : 590;
-    return { ...structuredClone(annotation.position), rects: [[x, 20, x + width, x >= 550 ? 200 : 50]] };
-  };
-  const adjust = core.createTextWidthAdjuster(nativeAdjust, 900, () => pageRect);
-
-  const result = adjust(
-    {
-      comment: "a long pasted sentence that should run horizontally",
-      position: { pageIndex: 0, fontSize: 6, rects: [[570, 20, 600, 26]] },
-    },
-    { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true }
-  );
-
-  assert.equal(result.rects[0][2] - result.rects[0][0], 590);
-  assert.equal(result.rects[0][0], 25);
-  assert.equal(calls.some(call => call.annotation.position.rects[0][0] === 25), true);
-  assert.equal(calls.at(-1).options.adjustSingleLineWidth, false);
-});
-
 test("leaves a multiline text annotation uncapped like Zotero", () => {
   let calls = 0;
   const nativeAdjust = (annotation) => {
     calls++;
     return { ...structuredClone(annotation.position), rects: [[10, 20, 1210, 50]] };
   };
-  const adjust = core.createTextWidthAdjuster(nativeAdjust, 900, () => [0, 0, 600, 800]);
+  const adjust = core.createTextWidthAdjuster(nativeAdjust, 900);
 
   const result = adjust(
-    { position: { fontSize: 6, rects: [[10, 20, 1210, 50]] } },
+    { position: { fontSize: 6, rects: [[10, 20, 40, 26]] } },
     { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true }
   );
 

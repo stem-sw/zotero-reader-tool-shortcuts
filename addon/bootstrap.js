@@ -39,14 +39,6 @@ function rtsGetTextMaxWidth() {
   );
 }
 
-function rtsGetTextPageRect(reader, annotation) {
-  const pageIndex = Number(annotation?.position?.pageIndex);
-  if (!Number.isInteger(pageIndex) || pageIndex < 0) return null;
-  const viewBox = reader?._internalReader?._primaryView?._iframeWindow
-    ?.PDFViewerApplication?.pdfViewer?._pages?.[pageIndex]?.viewport?.viewBox;
-  return Array.isArray(viewBox) ? viewBox : null;
-}
-
 function rtsPatchTextWidth(reader, maxWidth) {
   const manager = reader?._internalReader?._annotationManager;
   const current = manager?._adjustTextAnnotationPosition;
@@ -68,11 +60,7 @@ function rtsPatchTextWidth(reader, maxWidth) {
   }
 
   const original = manager._adjustTextAnnotationPosition;
-  const wrapped = ReaderToolShortcutsCore.createTextWidthAdjuster(
-    original,
-    maxWidth,
-    annotation => rtsGetTextPageRect(reader, annotation)
-  );
+  const wrapped = ReaderToolShortcutsCore.createTextWidthAdjuster(original, maxWidth);
   manager._adjustTextAnnotationPosition = wrapped;
   ReaderToolShortcutsTextWidthPatches.push({ manager, original, wrapped, width: maxWidth });
   return true;
