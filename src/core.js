@@ -136,11 +136,61 @@
       : DEFAULT_TEXT_MAX_WIDTH;
   }
 
-  function createTextWidthAdjuster(nativeAdjust, maxWidth) {
+  function createTextWidthAdjuster(nativeAdjust, maxWidth, getPageRect) {
     const normalizedMaxWidth = normalizeTextMaxWidth(maxWidth);
     const wrapped = function (annotation, options = {}) {
       if (!options.adjustSingleLineWidth || !options.enableSingleLineMaxWidth) {
         return nativeAdjust.call(this, annotation, options);
+      }
+
+      const sourceRect = annotation?.position?.rects?.[0];
+      const sourceFontSize = Number(annotation?.position?.fontSize);
+      const sourceIsMultiline = sourceRect && Number.isFinite(sourceFontSize)
+        && sourceRect[3] - sourceRect[1] >= 2 * sourceFontSize;
+      if (sourceIsMultiline) {
+        return nativeAdjust.call(this, annotation, options);
+      }
+
+      const pageRect = typeof getPageRect === "function" ? getPageRect(annotation) : null;
+      const rotation = ((Number(annotation?.position?.rotation) || 0) % 360 + 360) % 360;
+      if (
+        rotation === 0 &&
+        Array.isArray(pageRect) && pageRect.length === 4 && sourceRect &&
+        pageRect.every(value => Number.isFinite(value))
+      ) {
+        const borderPadding = 5;
+        const availablePageWidth = pageRect[2] - pageRect[0] - 2 * borderPadding;
+        const probeAnnotation = {
+          ...annotation,
+          position: JSON.parse(JSON.stringify(annotation.position)),
+        };
+        const probeRect = probeAnnotation.position.rects[0];
+        const sourceWidth = probeRect[2] - probeRect[0];
+        probeRect[0] = pageRect[0] + borderPadding;
+        probeRect[2] = probeRect[0] + sourceWidth;
+
+        const measured = nativeAdjust.call(this, probeAnnotation, {
+          ...options,
+          enableSingleLineMaxWidth: false,
+        });
+        const measuredRect = measured?.rects?.[0];
+        if (measuredRect && availablePageWidth > 0) {
+          const measuredWidth = measuredRect[2] - measuredRect[0];
+          const targetWidth = Math.min(measuredWidth, normalizedMaxWidth, availablePageWidth);
+          if (Number.isFinite(targetWidth) && targetWidth > 0) {
+            const fittedAnnotation = {
+              ...annotation,
+              position: JSON.parse(JSON.stringify(annotation.position)),
+            };
+            const fittedRect = fittedAnnotation.position.rects[0];
+            fittedRect[2] = fittedRect[0] + targetWidth;
+            return nativeAdjust.call(this, fittedAnnotation, {
+              ...options,
+              adjustSingleLineWidth: false,
+              enableSingleLineMaxWidth: false,
+            });
+          }
+        }
       }
 
       const uncapped = nativeAdjust.call(this, annotation, {
