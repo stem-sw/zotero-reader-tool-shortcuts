@@ -54,23 +54,9 @@
 
 .text-default-row input,
 .text-default-row select,
-.text-default-row button,
-.text-width-row input {
+.text-default-row button {
   min-height: 30px;
   box-sizing: border-box;
-}
-
-.text-width-row {
-  display: grid;
-  grid-template-columns: auto 100px 1fr;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.text-width-row span {
-  color: var(--fill-secondary, #666);
-  font-size: 0.9em;
 }
 
 #rts-text-color {

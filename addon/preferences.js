@@ -41,29 +41,23 @@
       color: getValue("textColor"),
       size: getValue("textSize"),
     });
-    const maxWidth = core.normalizeTextMaxWidth(getValue("textMaxWidth"));
     const colorInput = document.getElementById("rts-text-color");
     const sizeSelect = document.getElementById("rts-text-size");
-    const widthInput = document.getElementById("rts-text-max-width");
     if (colorInput) colorInput.value = defaults.color;
     if (sizeSelect) sizeSelect.value = String(defaults.size);
-    if (widthInput) widthInput.value = String(maxWidth);
   }
 
   function saveTextDefaults() {
     const colorInput = document.getElementById("rts-text-color");
     const sizeSelect = document.getElementById("rts-text-size");
-    const widthInput = document.getElementById("rts-text-max-width");
     const defaults = core.normalizeTextToolDefaults({
       color: colorInput?.value,
       size: sizeSelect?.value,
     });
-    const maxWidth = core.normalizeTextMaxWidth(widthInput?.value);
     setValue("textColor", defaults.color);
     setValue("textSize", defaults.size);
-    setValue("textMaxWidth", maxWidth);
     refreshTextDefaults();
-    setStatus(`텍스트 상자 기본값을 ${defaults.color}, 크기 ${defaults.size}, 최대 폭 ${maxWidth}로 저장했습니다.`);
+    setStatus(`텍스트 상자 기본값을 ${defaults.color}, 크기 ${defaults.size}로 저장했습니다.`);
   }
 
   function hasDuplicate(name, shortcut) {
@@ -119,13 +113,11 @@
     refreshTextDefaults();
     document.getElementById("rts-text-color")?.addEventListener("change", saveTextDefaults);
     document.getElementById("rts-text-size")?.addEventListener("change", saveTextDefaults);
-    document.getElementById("rts-text-max-width")?.addEventListener("change", saveTextDefaults);
     document.getElementById("rts-reset-text-defaults")?.addEventListener("click", () => {
       setValue("textColor", core.DEFAULT_TEXT_TOOL.color);
       setValue("textSize", core.DEFAULT_TEXT_TOOL.size);
-      setValue("textMaxWidth", core.DEFAULT_TEXT_MAX_WIDTH);
       refreshTextDefaults();
-      setStatus("텍스트 상자 기본값을 복원했습니다.");
+      setStatus("텍스트 상자 기본값을 파란색, 크기 6으로 복원했습니다.");
     });
 
     for (const button of document.querySelectorAll("button[data-clear]")) {
