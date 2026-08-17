@@ -119,6 +119,88 @@ test("normalizes invalid text defaults to blue and size 6", () => {
   );
 });
 
+test("normalizes the text annotation maximum width to 900 by default", () => {
+  assert.equal(core.normalizeTextMaxWidth(undefined), 900);
+  assert.equal(core.normalizeTextMaxWidth("1200"), 1200);
+  assert.equal(core.normalizeTextMaxWidth(99), 900);
+  assert.equal(core.normalizeTextMaxWidth(2001), 900);
+});
+
+test("replaces Zotero's 300-unit single-line cap with a 900-unit cap", () => {
+  const calls = [];
+  const nativeAdjust = (annotation, options) => {
+    calls.push({ annotation: structuredClone(annotation), options: { ...options } });
+    const width = options.adjustSingleLineWidth === false ? 900 : 1200;
+    return {
+      ...structuredClone(annotation.position),
+      rects: [[10, 20, 10 + width, options.adjustSingleLineWidth === false ? 50 : 30]],
+    };
+  };
+  const adjust = core.createTextWidthAdjuster(nativeAdjust, 900);
+  const annotation = {
+    comment: "long pasted text",
+    position: { fontSize: 6, rects: [[10, 20, 40, 26]] },
+  };
+
+  const result = adjust(annotation, {
+    adjustSingleLineWidth: true,
+    enableSingleLineMaxWidth: true,
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.enableSingleLineMaxWidth, false);
+  assert.equal(calls[1].annotation.position.rects[0][2] - calls[1].annotation.position.rects[0][0], 900);
+  assert.equal(calls[1].options.adjustSingleLineWidth, false);
+  assert.equal(result.rects[0][2] - result.rects[0][0], 900);
+});
+
+test("keeps a shorter text annotation at its measured width", () => {
+  let calls = 0;
+  const nativeAdjust = (annotation) => {
+    calls++;
+    return { ...structuredClone(annotation.position), rects: [[10, 20, 710, 30]] };
+  };
+  const adjust = core.createTextWidthAdjuster(nativeAdjust, 900);
+
+  const result = adjust(
+    { position: { fontSize: 6, rects: [[10, 20, 40, 26]] } },
+    { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true }
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(result.rects[0][2] - result.rects[0][0], 700);
+});
+
+test("leaves a multiline text annotation uncapped like Zotero", () => {
+  let calls = 0;
+  const nativeAdjust = (annotation) => {
+    calls++;
+    return { ...structuredClone(annotation.position), rects: [[10, 20, 1210, 50]] };
+  };
+  const adjust = core.createTextWidthAdjuster(nativeAdjust, 900);
+
+  const result = adjust(
+    { position: { fontSize: 6, rects: [[10, 20, 40, 26]] } },
+    { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true }
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(result.rects[0][2] - result.rects[0][0], 1200);
+  assert.equal(result.rects[0][3] - result.rects[0][1], 30);
+});
+
+test("delegates non-single-line position adjustments unchanged", () => {
+  const nativeAdjust = (annotation, options) => ({ annotation, options });
+  const adjust = core.createTextWidthAdjuster(nativeAdjust, 900);
+  const options = { adjustSingleLineWidth: false, enableSingleLineMaxWidth: true };
+  const annotation = { position: { rects: [[0, 0, 10, 10]] } };
+
+  const result = adjust(annotation, options);
+
+  assert.equal(result.annotation, annotation);
+  assert.equal(result.options, options);
+});
+
 test("ignores Readers whose text-tool internals are not ready", () => {
   assert.equal(core.applyTextToolDefaults(null, { color: "#2ea8e5", size: 6 }), false);
   assert.equal(
