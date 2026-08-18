@@ -1,6 +1,6 @@
 # Zotero Reader Tool Shortcuts
 
-Zotero PDF Reader에서 주석 도구 버튼을 키보드 단축키로 활성화하는 Zotero 9 플러그인입니다.
+서지 관리 프로그램 Zotero에 내장된 PDF 리더에서 주석 도구 버튼을 키보드 단축키로 활성화하는 Zotero 9 플러그인입니다.
 
 ## 지원 기능
 
@@ -21,9 +21,9 @@ Zotero PDF Reader에서 주석 도구 버튼을 키보드 단축키로 활성화
 
 | 기능 | 기본값 |
 |---|---|
-| 노트 추가 | `Alt+N` |
-| 텍스트 추가 | `Alt+T` |
-| 영역 선택 | `Alt+A` |
+| 노트 추가 | `Alt+3` |
+| 텍스트 추가 | `Alt+4` |
+| 영역 선택 | `Alt+5` |
 
 ## 설치
 

@@ -12,19 +12,19 @@
       id: "note",
       pref: "noteShortcut",
       selector: ".toolbar-button.note",
-      defaultShortcut: "Alt+KeyN",
+      defaultShortcut: "Alt+Digit3",
     },
     {
       id: "text",
       pref: "textShortcut",
       selector: ".toolbar-button.text",
-      defaultShortcut: "Alt+KeyT",
+      defaultShortcut: "Alt+Digit4",
     },
     {
       id: "area",
       pref: "areaShortcut",
       selector: ".toolbar-button.area",
-      defaultShortcut: "Alt+KeyA",
+      defaultShortcut: "Alt+Digit5",
     },
   ];
 

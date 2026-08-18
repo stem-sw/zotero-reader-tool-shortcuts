@@ -44,6 +44,14 @@ test("preference pane exposes text color, font-size, and maximum-width controls"
   assert.match(pane, /id="rts-text-max-width"[^>]*value="900"/);
 });
 
+test("shortcut preference defaults are Alt+3, Alt+4, and Alt+5", () => {
+  const prefsPath = path.join(__dirname, "..", "addon", "prefs.js");
+  const prefs = fs.readFileSync(prefsPath, "utf8");
+  assert.match(prefs, /noteShortcut", "Alt\+Digit3"/);
+  assert.match(prefs, /textShortcut", "Alt\+Digit4"/);
+  assert.match(prefs, /areaShortcut", "Alt\+Digit5"/);
+});
+
 test("text annotation preference defaults remain blue, size 6, and width 900", () => {
   const prefsPath = path.join(__dirname, "..", "addon", "prefs.js");
   const prefs = fs.readFileSync(prefsPath, "utf8");

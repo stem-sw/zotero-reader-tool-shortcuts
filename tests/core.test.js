@@ -67,9 +67,9 @@ test("ignores composing and repeated keyboard events", () => {
 
 test("maps the three requested tools to Zotero 9 toolbar selectors", () => {
   assert.deepEqual(core.TOOLS, [
-    { id: "note", pref: "noteShortcut", selector: ".toolbar-button.note", defaultShortcut: "Alt+KeyN" },
-    { id: "text", pref: "textShortcut", selector: ".toolbar-button.text", defaultShortcut: "Alt+KeyT" },
-    { id: "area", pref: "areaShortcut", selector: ".toolbar-button.area", defaultShortcut: "Alt+KeyA" },
+    { id: "note", pref: "noteShortcut", selector: ".toolbar-button.note", defaultShortcut: "Alt+Digit3" },
+    { id: "text", pref: "textShortcut", selector: ".toolbar-button.text", defaultShortcut: "Alt+Digit4" },
+    { id: "area", pref: "areaShortcut", selector: ".toolbar-button.area", defaultShortcut: "Alt+Digit5" },
   ]);
 });
 
