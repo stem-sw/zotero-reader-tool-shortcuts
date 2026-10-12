@@ -1,6 +1,6 @@
 # Zotero Reader Tool Shortcuts
 
-서지 관리 프로그램 Zotero에 내장된 PDF 리더에서 주석 도구 버튼을 키보드 단축키로 활성화하는 Zotero 9 플러그인입니다.
+서지 관리 프로그램 Zotero에 내장된 PDF 리더에서 주석 도구 버튼을 키보드 단축키로 활성화하는 Zotero 9–10 플러그인입니다.
 
 ## 지원 기능
 
@@ -63,10 +63,12 @@ npm run build
 
 ## 호환성
 
-- 확인한 설치본: Zotero `9.0.6`, BuildID `20260707151128`
-- manifest 지원 범위: Zotero `9.0`–`9.*`
+- 라이브 확인 설치본:
+  - Zotero `9.0.6`, BuildID `20260707151128`
+  - Zotero `10.0.6`, BuildID `20261007153950`
+- manifest 지원 범위: Zotero `9.0`–`10.0.*`
 
-Zotero Reader의 공개 lifecycle hook을 사용하지만, 실제 키 입력 연결과 도구 활성화에는 Zotero 9.0.6에서 확인한 private Reader 필드와 내부 toolbar selector를 사용합니다.
+Zotero Reader의 공개 lifecycle hook을 사용하지만, 실제 키 입력 연결과 도구 활성화에는 Zotero 9.0.6 및 10.0.6에서 확인한 private Reader 필드와 내부 toolbar selector를 사용합니다.
 
 - `Zotero.Reader._readers`
 - `reader._waitForReader()` / `reader._initPromise`

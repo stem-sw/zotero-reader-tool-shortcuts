@@ -65,7 +65,7 @@ test("ignores composing and repeated keyboard events", () => {
   assert.equal(core.eventMatchesShortcut(keyEvent({ altKey: true, repeat: true }), "Alt+KeyN"), false);
 });
 
-test("maps the three requested tools to Zotero 9 toolbar selectors", () => {
+test("maps the three requested tools to the Reader toolbar selectors", () => {
   assert.deepEqual(core.TOOLS, [
     { id: "note", pref: "noteShortcut", selector: ".toolbar-button.note", defaultShortcut: "Alt+Digit3" },
     { id: "text", pref: "textShortcut", selector: ".toolbar-button.text", defaultShortcut: "Alt+Digit4" },

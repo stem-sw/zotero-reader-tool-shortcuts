@@ -68,7 +68,9 @@ with zipfile.ZipFile(output) as archive:
     packed_manifest = json.loads(archive.read("manifest.json"))
     packed_target = packed_manifest["applications"]["zotero"]
     if packed_target["strict_min_version"] != "9.0":
-        raise SystemExit("XPI is not marked for Zotero 9")
+        raise SystemExit("XPI minimum Zotero version unexpectedly changed")
+    if packed_target["strict_max_version"] != "10.0.*":
+        raise SystemExit("XPI is not marked for Zotero 10.0")
     if packed_target["update_url"] != zotero_target["update_url"]:
         raise SystemExit("Packed update_url does not match source manifest")
 
