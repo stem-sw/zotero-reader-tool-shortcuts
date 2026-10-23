@@ -112,6 +112,89 @@ test("sets configured text annotation color and size", () => {
   assert.deepEqual(textTool, { type: "text", color: "#ff6666", size: 18 });
 });
 
+test("maps the top-row 9 key to black without reading protected Reader state", () => {
+  const calls = [];
+  const state = {};
+  Object.defineProperty(state, "tool", {
+    get() { throw new Error("security wrapper denied access"); },
+  });
+  const reader = {
+    _internalReader: {
+      _state: state,
+      setTool(params) { calls.push(params); },
+    },
+  };
+  const doc = {
+    querySelector(selector) {
+      return selector === ".toolbar-button.text"
+        ? { classList: { contains: name => name === "active" } }
+        : null;
+    },
+  };
+
+  assert.equal(
+    core.activateBlackTextColor(
+      reader,
+      keyEvent({ key: "9", code: "Digit9" }),
+      doc,
+      value => ({ ...value, cloned: true })
+    ),
+    true
+  );
+  assert.deepEqual(calls, [{ color: "#000000", cloned: true }]);
+});
+
+test("ignores modified 9, Numpad9, native Digit1-Digit8, and inactive text tool", () => {
+  const calls = [];
+  const reader = {
+    _internalReader: {
+      setTool(params) { calls.push(params); },
+    },
+  };
+  const activeDoc = {
+    querySelector: () => ({ classList: { contains: name => name === "active" } }),
+  };
+  const inactiveDoc = {
+    querySelector: () => ({ classList: { contains: () => false } }),
+  };
+
+  assert.equal(
+    core.activateBlackTextColor(
+      reader,
+      keyEvent({ key: "9", code: "Digit9" }),
+      inactiveDoc
+    ),
+    false
+  );
+  assert.equal(
+    core.activateBlackTextColor(
+      reader,
+      keyEvent({ key: "9", code: "Digit9", ctrlKey: true }),
+      activeDoc
+    ),
+    false
+  );
+  assert.equal(
+    core.activateBlackTextColor(
+      reader,
+      keyEvent({ key: "9", code: "Numpad9" }),
+      activeDoc
+    ),
+    false
+  );
+  for (let digit = 1; digit <= 8; digit++) {
+    assert.equal(
+      core.activateBlackTextColor(
+        reader,
+        keyEvent({ key: String(digit), code: `Digit${digit}` }),
+        activeDoc
+      ),
+      false
+    );
+  }
+  assert.deepEqual(calls, []);
+});
+
 test("normalizes invalid text defaults to blue and size 6", () => {
   assert.deepEqual(
     core.normalizeTextToolDefaults({ color: "not-a-color", size: 7 }),

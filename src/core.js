@@ -129,6 +129,30 @@
     return true;
   }
 
+  function activateBlackTextColor(reader, event, toolbarDoc, cloneForReader) {
+    if (
+      !event ||
+      event.code !== "Digit9" ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.shiftKey ||
+      event.metaKey
+    ) {
+      return false;
+    }
+    const internalReader = reader?._internalReader;
+    const textButton = toolbarDoc?.querySelector?.(".toolbar-button.text");
+    if (
+      !textButton?.classList?.contains?.("active") ||
+      typeof internalReader?.setTool !== "function"
+    ) {
+      return false;
+    }
+    const toReader = typeof cloneForReader === "function" ? cloneForReader : value => value;
+    internalReader.setTool(toReader({ color: "#000000" }));
+    return true;
+  }
+
   function normalizeTextMaxWidth(value) {
     const width = Number(value);
     return Number.isFinite(width) && width >= 100 && width <= 2000
@@ -282,6 +306,7 @@
     DEFAULT_TEXT_MAX_WIDTH,
     normalizeTextToolDefaults,
     applyTextToolDefaults,
+    activateBlackTextColor,
     normalizeTextMaxWidth,
     createTextWidthAdjuster,
     duplicateToolForShortcut,

@@ -28,9 +28,11 @@ function loadBootstrap() {
   };
   context.ReaderToolShortcutsCore = {
     TOOLS: [],
+    TEXT_FONT_SIZE_STEPS: [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
     isEditableTarget: () => false,
     toolForEvent: () => null,
     activateTool: () => false,
+    activateBlackTextColor: () => false,
     normalizeTextToolDefaults: defaults => defaults,
     applyTextToolDefaults: () => false,
     normalizeTextMaxWidth: value => Number(value) || 900,
@@ -70,6 +72,122 @@ function activate(context, generation = 1) {
   return generation;
 }
 
+function fakeToolbarDocument({ hasTextButton = true } = {}) {
+  const nodesByID = new Map();
+  let textButtonVisible = hasTextButton;
+  const textButton = {
+    after(node) {
+      node.parentNode = { kind: "toolbar" };
+      node.previousElementSibling = textButton;
+      node._insertedAfterTextButton = true;
+    },
+  };
+  return {
+    textButton,
+    showTextButton() { textButtonVisible = true; },
+    createElement(tagName) {
+      const listeners = new Map();
+      const node = {
+        tagName: tagName.toUpperCase(),
+        children: [],
+        dataset: {},
+        style: {},
+        append(...children) { this.children.push(...children); },
+        addEventListener(type, handler) { listeners.set(type, handler); },
+        dispatch(type) { listeners.get(type)?.({ target: this }); },
+        remove() { this.removed = true; nodesByID.delete(this.id); },
+        set id(value) { this._id = value; nodesByID.set(value, this); },
+        get id() { return this._id; },
+      };
+      return node;
+    },
+    querySelector(selector) {
+      if (selector === ".toolbar-button.text") {
+        return textButtonVisible ? textButton : null;
+      }
+      if (selector.startsWith("#")) return nodesByID.get(selector.slice(1)) || null;
+      return null;
+    },
+  };
+}
+
+test("text-size control is inserted directly after the T tool and is idempotent", () => {
+  const context = loadBootstrap();
+  const doc = fakeToolbarDocument();
+  context.Zotero.Prefs.get = key => key.endsWith("textSize") ? 24 : "#2ea8e5";
+  context.ReaderToolShortcutsCore.TEXT_FONT_SIZE_STEPS = [24, 48];
+  activate(context, 51);
+
+  const first = context.rtsInstallTextSizeControl({ doc });
+  const second = context.rtsInstallTextSizeControl({ doc });
+
+  assert.equal(first, true);
+  assert.equal(second, true);
+  const control = doc.querySelector("#reader-tool-shortcuts-text-size");
+  assert.equal(control._insertedAfterTextButton, true);
+  assert.equal(control.children[0].tagName, "SELECT");
+  assert.match(control.children[0].style.cssText, /-moz-window-dragging\s*:\s*no-drag/);
+  assert.equal(control.children[0].value, "24");
+  assert.deepEqual(
+    control.children[0].children.map(option => option.value),
+    ["24", "48"]
+  );
+});
+
+test("changing the toolbar size saves the preference and updates every open Reader", () => {
+  const context = loadBootstrap();
+  const doc = fakeToolbarDocument();
+  const prefs = { textColor: "#2ea8e5", textSize: 24 };
+  const writes = [];
+  context.Zotero.Prefs.get = key => prefs[key.split(".").pop()];
+  context.Zotero.Prefs.set = (key, value) => {
+    writes.push({ key, value });
+    prefs[key.split(".").pop()] = value;
+  };
+  const first = { _internalReader: { _tools: { text: {} } } };
+  const second = { _internalReader: { _tools: { text: {} } } };
+  context.Zotero.Reader._readers = [first, second];
+  const applied = [];
+  context.ReaderToolShortcutsCore.applyTextToolDefaults = (reader, defaults) => {
+    applied.push({ reader, defaults });
+    Object.assign(reader._internalReader._tools.text, defaults);
+    return true;
+  };
+  activate(context, 52);
+  context.rtsInstallTextSizeControl({ doc });
+
+  const select = doc.querySelector("#reader-tool-shortcuts-text-size").children[0];
+  select.value = "48";
+  select.dispatch("change");
+
+  assert.deepEqual(writes, [{
+    key: "extensions.reader-tool-shortcuts.textSize",
+    value: 48,
+  }]);
+  assert.equal(applied.length, 2);
+  assert.deepEqual(first._internalReader._tools.text, { color: "#2ea8e5", size: 48 });
+  assert.deepEqual(second._internalReader._tools.text, { color: "#2ea8e5", size: 48 });
+});
+
+test("changing the toolbar size skips a destroyed Reader and updates the others", () => {
+  const context = loadBootstrap();
+  context.Zotero.Prefs.get = () => "#2ea8e5";
+  context.Zotero.Prefs.set = () => {};
+  const destroyed = {};
+  Object.defineProperty(destroyed, "_internalReader", {
+    get() { throw new Error("dead object"); },
+  });
+  const live = { _internalReader: { _tools: { text: {} } } };
+  context.Zotero.Reader._readers = [destroyed, live];
+  context.ReaderToolShortcutsCore.applyTextToolDefaults = (reader, defaults) => {
+    Object.assign(reader._internalReader._tools.text, defaults);
+    return true;
+  };
+
+  assert.doesNotThrow(() => context.rtsSetTextSize(36));
+  assert.deepEqual(live._internalReader._tools.text, { color: "#2ea8e5", size: 36 });
+});
+
 test("application shutdown stops the Reader scan timer", () => {
   const context = loadBootstrap();
   let clearedTimer = null;
@@ -83,6 +201,21 @@ test("application shutdown stops the Reader scan timer", () => {
   assert.equal(clearedTimer, 88);
   assert.equal(context.ReaderToolShortcutsScanTimer, null);
   assert.equal(context.ReaderToolShortcutsShuttingDown, true);
+});
+
+test("plugin shutdown removes text-size controls from open Readers", () => {
+  const context = loadBootstrap();
+  const doc = fakeToolbarDocument();
+  context.Zotero.Prefs.get = key => key.endsWith("textSize") ? 24 : "#2ea8e5";
+  context.Zotero.Reader._readers = [{ _iframeWindow: { document: doc } }];
+  activate(context, 53);
+  context.rtsInstallTextSizeControl({ doc });
+  const control = doc.querySelector("#reader-tool-shortcuts-text-size");
+
+  context.shutdown({}, 0);
+
+  assert.equal(control.removed, true);
+  assert.equal(doc.querySelector("#reader-tool-shortcuts-text-size"), null);
 });
 
 test("Reader scan timer restarts for a new generation", () => {
@@ -144,6 +277,41 @@ test("Reader event scanning uses the current active generation", () => {
   context.rtsHandleReaderEvent();
 
   assert.equal(outer.has("keydown"), true);
+});
+
+test("renderToolbar event inserts the text-size control beside the T tool", () => {
+  const context = loadBootstrap();
+  const doc = fakeToolbarDocument();
+  context.Zotero.Prefs.get = key => key.endsWith("textSize") ? 18 : "#2ea8e5";
+  activate(context, 32);
+
+  context.rtsHandleReaderEvent({ doc });
+
+  const control = doc.querySelector("#reader-tool-shortcuts-text-size");
+  assert.equal(control._insertedAfterTextButton, true);
+  assert.equal(control.children[0].value, "18");
+});
+
+test("renderToolbar uses the plugin area until the T tool becomes available", () => {
+  const context = loadBootstrap();
+  const doc = fakeToolbarDocument({ hasTextButton: false });
+  let fallbackControl = null;
+  context.Zotero.Prefs.get = key => key.endsWith("textSize") ? 24 : "#2ea8e5";
+  activate(context, 33);
+
+  const installed = context.rtsInstallTextSizeControl({
+    doc,
+    append(node) {
+      fallbackControl = node;
+      node.parentNode = { kind: "plugin-area" };
+    },
+  });
+  doc.showTextButton();
+  context.rtsInstallTextSizeControl({ doc });
+
+  assert.equal(installed, true);
+  assert.equal(fallbackControl.children[0].value, "24");
+  assert.equal(fallbackControl._insertedAfterTextButton, true);
 });
 
 test("startup cancelled during Zotero initialization performs no registrations", async () => {
@@ -218,9 +386,11 @@ test("startup cancelled during preference registration installs no Reader handle
       loadSubScript: (url, scope) => {
         scope.ReaderToolShortcutsCore = {
           TOOLS: [],
+          TEXT_FONT_SIZE_STEPS: [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
           isEditableTarget: () => false,
           toolForEvent: () => null,
           activateTool: () => false,
+          activateBlackTextColor: () => false,
           normalizeTextToolDefaults: defaults => defaults,
           applyTextToolDefaults: () => false,
           normalizeTextMaxWidth: value => Number(value) || 900,
@@ -278,9 +448,11 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
       loadSubScript(url, scope) {
         scope.ReaderToolShortcutsCore = {
           TOOLS: [],
+          TEXT_FONT_SIZE_STEPS: [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
           isEditableTarget: () => false,
           toolForEvent: () => null,
           activateTool: () => false,
+          activateBlackTextColor: () => false,
           normalizeTextToolDefaults: defaults => defaults,
           applyTextToolDefaults: () => false,
           normalizeTextMaxWidth: value => Number(value) || 900,
@@ -405,6 +577,57 @@ test("Reader scan reapplies text defaults after a preference change", () => {
 
   assert.equal(applications, 2);
   assert.deepEqual(internalReader._tools.text, { color: "#a28ae5", size: 18 });
+});
+
+test("Reader scan restores and synchronizes a missing toolbar size control", () => {
+  const context = loadBootstrap();
+  const outer = fakeWindow();
+  const doc = fakeToolbarDocument();
+  outer.document = doc;
+  const prefs = { textColor: "#2ea8e5", textSize: 12 };
+  context.Zotero.Prefs.get = key => prefs[key.split(".").pop()];
+  context.Zotero.Reader._readers = [{
+    _iframeWindow: outer,
+    _internalReader: { _tools: { text: {} } },
+  }];
+  activate(context, 44);
+
+  context.rtsScanReaders(44);
+  prefs.textSize = 36;
+  context.rtsScanReaders(44);
+
+  const select = doc.querySelector("#reader-tool-shortcuts-text-size").children[0];
+  assert.equal(select.value, "36");
+});
+
+test("Reader scan synchronizes text-size controls across multiple toolbar documents", () => {
+  const context = loadBootstrap();
+  const firstWindow = fakeWindow();
+  const secondWindow = fakeWindow();
+  const firstDoc = fakeToolbarDocument();
+  const secondDoc = fakeToolbarDocument();
+  firstWindow.document = firstDoc;
+  secondWindow.document = secondDoc;
+  const prefs = { textColor: "#2ea8e5", textSize: 12 };
+  context.Zotero.Prefs.get = key => prefs[key.split(".").pop()];
+  context.Zotero.Prefs.set = (key, value) => {
+    prefs[key.split(".").pop()] = value;
+  };
+  context.Zotero.Reader._readers = [firstWindow, secondWindow].map(win => ({
+    _iframeWindow: win,
+    _internalReader: { _tools: { text: {} } },
+  }));
+  activate(context, 45);
+  context.rtsScanReaders(45);
+
+  const firstSelect = firstDoc.querySelector("#reader-tool-shortcuts-text-size").children[0];
+  firstSelect.value = "48";
+  firstSelect.dispatch("change");
+  context.rtsScanReaders(45);
+
+  const secondSelect = secondDoc.querySelector("#reader-tool-shortcuts-text-size").children[0];
+  assert.equal(firstSelect.value, "48");
+  assert.equal(secondSelect.value, "48");
 });
 
 test("resolves the current PDF page viewBox for text-width fitting", () => {
@@ -561,4 +784,54 @@ test("Reader window unload removes its keydown listener and record", () => {
 
   assert.equal(win.has("keydown"), false);
   assert.equal(context.ReaderToolShortcutsWindows.length, 0);
+});
+
+test("top-row 9 is routed with toolbar and Reader-realm cloning", () => {
+  const context = loadBootstrap();
+  const win = fakeWindow();
+  const readerRealm = { id: "reader-realm" };
+  const reader = { id: "reader", _iframeWindow: readerRealm };
+  let received = null;
+  context.Components = {
+    utils: {
+      cloneInto(value, target) { return { value, target }; },
+    },
+  };
+  context.ReaderToolShortcutsCore.activateBlackTextColor = (
+    candidate,
+    event,
+    toolbarDoc,
+    cloneForReader
+  ) => {
+    received = {
+      candidate,
+      code: event.code,
+      toolbarDoc,
+      cloned: cloneForReader({ color: "#000000" }),
+    };
+    return true;
+  };
+  activate(context, 8);
+  context.rtsAttachToWindow(win, win.document, 8, reader);
+  let prevented = 0;
+  let stopped = 0;
+
+  win.emit("keydown", {
+    code: "Digit9",
+    target: {},
+    defaultPrevented: false,
+    isComposing: false,
+    repeat: false,
+    preventDefault() { prevented++; },
+    stopPropagation() { stopped++; },
+  });
+
+  assert.deepEqual(received, {
+    candidate: reader,
+    code: "Digit9",
+    toolbarDoc: win.document,
+    cloned: { value: { color: "#000000" }, target: readerRealm },
+  });
+  assert.equal(prevented, 1);
+  assert.equal(stopped, 1);
 });

@@ -13,6 +13,7 @@ var ReaderToolShortcutsConfiguredReaders = new WeakMap();
 var ReaderToolShortcutsTextWidthPatches = [];
 
 const RTS_PREF_BRANCH = "extensions.reader-tool-shortcuts.";
+const RTS_TEXT_SIZE_CONTROL_ID = "reader-tool-shortcuts-text-size";
 
 function rtsLog(message) {
   Zotero.debug(`Reader Tool Shortcuts: ${message}`);
@@ -37,6 +38,82 @@ function rtsGetTextMaxWidth() {
   return ReaderToolShortcutsCore.normalizeTextMaxWidth(
     Zotero.Prefs.get(RTS_PREF_BRANCH + "textMaxWidth")
   );
+}
+
+function rtsApplyTextSize(size) {
+  const defaults = ReaderToolShortcutsCore.normalizeTextToolDefaults({
+    color: Zotero.Prefs.get(RTS_PREF_BRANCH + "textColor"),
+    size,
+  });
+  let readers;
+  try {
+    readers = [...(Zotero.Reader?._readers || [])];
+  }
+  catch (error) {
+    return;
+  }
+  for (const reader of readers) {
+    try {
+      const internalReader = reader?._internalReader;
+      if (!internalReader) continue;
+      if (ReaderToolShortcutsCore.applyTextToolDefaults(reader, defaults)) {
+        ReaderToolShortcutsConfiguredReaders.set(
+          internalReader,
+          `${defaults.color}:${defaults.size}`
+        );
+      }
+    }
+    catch (error) {
+      // A reader wrapper may have been destroyed during the update.
+    }
+  }
+}
+
+function rtsSetTextSize(value) {
+  const size = Number(value);
+  if (!ReaderToolShortcutsCore.TEXT_FONT_SIZE_STEPS.includes(size)) return false;
+  Zotero.Prefs.set(RTS_PREF_BRANCH + "textSize", size);
+  rtsApplyTextSize(size);
+  return true;
+}
+
+function rtsInstallTextSizeControl(event) {
+  const doc = event?.doc;
+  if (!doc?.querySelector || !doc?.createElement) return false;
+
+  let container = doc.querySelector(`#${RTS_TEXT_SIZE_CONTROL_ID}`);
+  if (!container) {
+    container = doc.createElement("span");
+    container.id = RTS_TEXT_SIZE_CONTROL_ID;
+    container.style.cssText = "display:inline-flex;align-items:center;margin-inline:3px;";
+
+    const select = doc.createElement("select");
+    select.title = "Text box font size";
+    select.setAttribute?.("aria-label", "Text box font size");
+    select.style.cssText = "height:28px;min-width:52px;padding:0 4px;border-radius:5px;color:inherit;background:inherit;-moz-window-dragging:no-drag;";
+    for (const size of ReaderToolShortcutsCore.TEXT_FONT_SIZE_STEPS) {
+      const option = doc.createElement("option");
+      option.value = String(size);
+      option.textContent = String(size);
+      select.append(option);
+    }
+    select.addEventListener("change", () => rtsSetTextSize(select.value));
+    container.append(select);
+  }
+
+  container.children[0].value = String(rtsGetTextToolDefaults().size);
+  const textButton = doc.querySelector(".toolbar-button.text");
+  if (textButton?.after) {
+    if (container.previousElementSibling !== textButton) {
+      textButton.after(container);
+    }
+    return true;
+  }
+  if (!container.parentNode && typeof event.append === "function") {
+    event.append(container);
+    return true;
+  }
+  return Boolean(container.parentNode);
 }
 
 function rtsGetTextPageRect(reader, annotation) {
@@ -135,7 +212,7 @@ function rtsIsStartupCurrent(generation, zotero) {
   );
 }
 
-function rtsAttachToWindow(win, toolbarDoc, generation) {
+function rtsAttachToWindow(win, toolbarDoc, generation, reader) {
   if (
     !win ||
     !toolbarDoc ||
@@ -149,12 +226,14 @@ function rtsAttachToWindow(win, toolbarDoc, generation) {
   );
   if (existing) {
     existing.toolbarDoc = toolbarDoc;
+    if (reader) existing.reader = reader;
     return;
   }
 
   const record = {
     win,
     toolbarDoc,
+    reader,
     handler: null,
     unloadHandler: null,
   };
@@ -165,6 +244,22 @@ function rtsAttachToWindow(win, toolbarDoc, generation) {
       event.repeat ||
       ReaderToolShortcutsCore.isEditableTarget(event.target)
     ) {
+      return;
+    }
+
+    try {
+      if (ReaderToolShortcutsCore.activateBlackTextColor(
+        record.reader,
+        event,
+        record.toolbarDoc,
+        value => Components.utils.cloneInto(value, record.reader._iframeWindow)
+      )) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    } catch (error) {
+      Zotero.logError(error);
       return;
     }
 
@@ -229,6 +324,7 @@ function rtsScanReaders(generation) {
       }
       const toolbarDoc = reader?._iframeWindow?.document;
       if (!toolbarDoc) continue;
+      rtsInstallTextSizeControl({ doc: toolbarDoc });
       const windows = [
         reader._iframeWindow,
         reader._internalReader?._primaryView?._iframeWindow,
@@ -236,7 +332,7 @@ function rtsScanReaders(generation) {
       ].filter(Boolean);
       for (const win of windows) {
         liveWindows.add(win);
-        rtsAttachToWindow(win, toolbarDoc, generation);
+        rtsAttachToWindow(win, toolbarDoc, generation, reader);
       }
     }
     catch (error) {
@@ -252,7 +348,8 @@ function rtsScanReaders(generation) {
   }
 }
 
-function rtsHandleReaderEvent() {
+function rtsHandleReaderEvent(event) {
+  rtsInstallTextSizeControl(event);
   rtsScanReaders(ReaderToolShortcutsGeneration);
 }
 
@@ -283,6 +380,19 @@ function rtsStopReaderScan() {
 function rtsDetachAllReaderWindows() {
   for (const { win } of [...ReaderToolShortcutsWindows]) {
     rtsDetachWindow(win);
+  }
+}
+
+function rtsRemoveTextSizeControls() {
+  for (const reader of Zotero.Reader?._readers || []) {
+    try {
+      reader?._iframeWindow?.document
+        ?.querySelector(`#${RTS_TEXT_SIZE_CONTROL_ID}`)
+        ?.remove();
+    }
+    catch (error) {
+      // The reader document may already have been destroyed.
+    }
   }
 }
 
@@ -354,6 +464,7 @@ function shutdown(data, reason) {
 
   rtsDetachAllReaderWindows();
   rtsRestoreTextWidthPatches();
+  rtsRemoveTextSizeControls();
 
   // Zotero removes Reader listeners by plugin ID during plugin shutdown.
   // Avoid calling unregisterEventListener here because Zotero 9.0.6's current
