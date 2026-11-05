@@ -16,7 +16,7 @@ test("Zotero target declares an HTTPS update URL", () => {
 });
 
 test("manifest and package versions match the toolbar font-size release", () => {
-  assert.equal(manifest.version, "1.0.18");
+  assert.equal(manifest.version, "1.0.23");
   assert.equal(manifest.version, packageMetadata.version);
 });
 

@@ -28,7 +28,7 @@
     },
   ];
 
-  const TEXT_FONT_SIZE_STEPS = [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192];
+  const TEXT_FONT_SIZE_STEPS = [3, 4, 5, 6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192];
   const DEFAULT_TEXT_TOOL = { color: "#2ea8e5", size: 6 };
   const DEFAULT_TEXT_MAX_WIDTH = 900;
 

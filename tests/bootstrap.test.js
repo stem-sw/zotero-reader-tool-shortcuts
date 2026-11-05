@@ -28,7 +28,7 @@ function loadBootstrap() {
   };
   context.ReaderToolShortcutsCore = {
     TOOLS: [],
-    TEXT_FONT_SIZE_STEPS: [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
+    TEXT_FONT_SIZE_STEPS: [3, 4, 5, 6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
     isEditableTarget: () => false,
     toolForEvent: () => null,
     activateTool: () => false,
@@ -386,7 +386,7 @@ test("startup cancelled during preference registration installs no Reader handle
       loadSubScript: (url, scope) => {
         scope.ReaderToolShortcutsCore = {
           TOOLS: [],
-          TEXT_FONT_SIZE_STEPS: [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
+          TEXT_FONT_SIZE_STEPS: [3, 4, 5, 6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
           isEditableTarget: () => false,
           toolForEvent: () => null,
           activateTool: () => false,
@@ -448,7 +448,7 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
       loadSubScript(url, scope) {
         scope.ReaderToolShortcutsCore = {
           TOOLS: [],
-          TEXT_FONT_SIZE_STEPS: [6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
+          TEXT_FONT_SIZE_STEPS: [3, 4, 5, 6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192],
           isEditableTarget: () => false,
           toolForEvent: () => null,
           activateTool: () => false,
