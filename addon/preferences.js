@@ -45,15 +45,18 @@
     const colorInput = document.getElementById("rts-text-color");
     const sizeSelect = document.getElementById("rts-text-size");
     const widthInput = document.getElementById("rts-text-max-width");
+    const lineHeightInput = document.getElementById("rts-text-line-height");
     if (colorInput) colorInput.value = defaults.color;
     if (sizeSelect) sizeSelect.value = String(defaults.size);
     if (widthInput) widthInput.value = String(maxWidth);
+    if (lineHeightInput) lineHeightInput.value = String(core.normalizeTextLineHeight(getValue("textLineHeight")));
   }
 
   function saveTextDefaults() {
     const colorInput = document.getElementById("rts-text-color");
     const sizeSelect = document.getElementById("rts-text-size");
     const widthInput = document.getElementById("rts-text-max-width");
+    const lineHeightInput = document.getElementById("rts-text-line-height");
     const defaults = core.normalizeTextToolDefaults({
       color: colorInput?.value,
       size: sizeSelect?.value,
@@ -62,8 +65,9 @@
     setValue("textColor", defaults.color);
     setValue("textSize", defaults.size);
     setValue("textMaxWidth", maxWidth);
+    setValue("textLineHeight", String(core.normalizeTextLineHeight(lineHeightInput?.value)));
     refreshTextDefaults();
-    setStatus(`텍스트 상자 기본값을 ${defaults.color}, 크기 ${defaults.size}, 최대 폭 ${maxWidth}로 저장했습니다.`);
+    setStatus(`텍스트 상자 기본값을 ${defaults.color}, 크기 ${defaults.size}, 최대 폭 ${maxWidth}, 줄 간격 ${core.normalizeTextLineHeight(lineHeightInput?.value)}배로 저장했습니다.`);
   }
 
   function hasDuplicate(name, shortcut) {
@@ -120,10 +124,12 @@
     document.getElementById("rts-text-color")?.addEventListener("change", saveTextDefaults);
     document.getElementById("rts-text-size")?.addEventListener("change", saveTextDefaults);
     document.getElementById("rts-text-max-width")?.addEventListener("change", saveTextDefaults);
+    document.getElementById("rts-text-line-height")?.addEventListener("change", saveTextDefaults);
     document.getElementById("rts-reset-text-defaults")?.addEventListener("click", () => {
       setValue("textColor", core.DEFAULT_TEXT_TOOL.color);
       setValue("textSize", core.DEFAULT_TEXT_TOOL.size);
       setValue("textMaxWidth", core.DEFAULT_TEXT_MAX_WIDTH);
+      setValue("textLineHeight", String(core.DEFAULT_TEXT_LINE_HEIGHT));
       refreshTextDefaults();
       setStatus("텍스트 상자 기본값을 복원했습니다.");
     });

@@ -30,6 +30,9 @@ required = [
     "preferences.xhtml",
     "preferences.js",
     "preferences.css",
+    "fonts/font.json",
+    "fonts/RTS-NotoSansKR-Regular.ttf",
+    "fonts/OFL.txt",
 ]
 for filename in required:
     if not (ADDON / filename).is_file():
@@ -53,7 +56,7 @@ with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
         info.create_system = 3
         info.compress_type = zipfile.ZIP_STORED
         info.external_attr = 0o644 << 16
-        archive.writestr(info, normalized_text_bytes(ADDON / filename))
+        archive.writestr(info, (ADDON / filename).read_bytes() if filename.endswith(".ttf") else normalized_text_bytes(ADDON / filename))
     info = zipfile.ZipInfo("core.js", date_time=(1980, 1, 1, 0, 0, 0))
     info.create_system = 3
     info.compress_type = zipfile.ZIP_STORED

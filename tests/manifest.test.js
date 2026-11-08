@@ -15,8 +15,8 @@ test("Zotero target declares an HTTPS update URL", () => {
   assert.match(zotero.update_url, /^https:\/\//);
 });
 
-test("manifest and package versions match the toolbar font-size release", () => {
-  assert.equal(manifest.version, "1.0.23");
+test("manifest and package versions match the font size and line spacing release", () => {
+  assert.equal(manifest.version, "1.0.26");
   assert.equal(manifest.version, packageMetadata.version);
 });
 
@@ -41,6 +41,7 @@ test("preference pane exposes text color, font-size, and maximum-width controls"
   assert.match(pane, /id="rts-text-color"[^>]*type="color"/);
   assert.match(pane, /id="rts-text-size"/);
   assert.match(pane, /value="192"/);
+  assert.match(pane, /id="rts-text-line-height"[^>]*type="number"/);
   assert.match(pane, /id="rts-text-max-width"[^>]*type="number"/);
   assert.match(pane, /id="rts-text-max-width"[^>]*value="900"/);
 });
@@ -59,4 +60,5 @@ test("text annotation preference defaults remain blue, size 6, and width 900", (
   assert.match(prefs, /textColor", "#2ea8e5"/);
   assert.match(prefs, /textSize", 6\)/);
   assert.match(prefs, /textMaxWidth", 900\)/);
+  assert.match(prefs, /textLineHeight", "1\.8"\)/);
 });
