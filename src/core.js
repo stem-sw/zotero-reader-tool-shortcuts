@@ -31,6 +31,7 @@
   const TEXT_FONT_SIZE_STEPS = [3, 4, 5, 6, 8, 10, 12, 14, 18, 24, 36, 48, 64, 72, 96, 144, 192];
   const DEFAULT_TEXT_TOOL = { color: "#2ea8e5", size: 6 };
   const DEFAULT_TEXT_MAX_WIDTH = 900;
+  const DEFAULT_TEXT_LINE_HEIGHT = 1.8;
 
   const MODIFIER_KEYS = new Set([
     "Alt",
@@ -160,6 +161,24 @@
       : DEFAULT_TEXT_MAX_WIDTH;
   }
 
+  function normalizeTextLineHeight(value) {
+    const height = Number(value);
+    return Number.isFinite(height) && height >= 0.5 && height <= 3
+      ? Math.round(height * 10) / 10
+      : DEFAULT_TEXT_LINE_HEIGHT;
+  }
+
+  function textLayoutKey(comment, position) {
+    const text = (comment || "").replace(/\r\n?/g, "\n");
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+    }
+    const rect = position.rects?.[0];
+    const width = rect ? (rect[2] - rect[0]).toFixed(3) : "";
+    return [text.length, hash >>> 0, width, position.fontSize, position.rtsLineHeight].join(":");
+  }
+
   function createTextWidthAdjuster(nativeAdjust, maxWidth, getPageRect, cloneForReader) {
     const normalizedMaxWidth = normalizeTextMaxWidth(maxWidth);
     const toReader = typeof cloneForReader === "function" ? cloneForReader : value => value;
@@ -269,6 +288,81 @@
     return wrapped;
   }
 
+
+  function patchPDFWorkerSource(source, font) {
+    const patches = [
+      [/let lineHeightMultiplier\s*=\s*1\.2;/g, `
+        const rtsHeight = Number(annotation.position.rtsLineHeight);
+        const rtsCustom = Number.isFinite(rtsHeight) && rtsHeight >= 0.5 && rtsHeight <= 3;
+        let lineHeightMultiplier = rtsCustom ? rtsHeight : 1.2;
+        const rtsChars = chars.filter(c => c.char !== '\\n' && c.char !== '\\r');
+        const rtsLengths = annotation.position.rtsLineLengths;
+        const rtsCurrentLayout = rtsCustom && annotation.position.rtsLayoutKey
+          === (${textLayoutKey})(annotation.comment, annotation.position);
+        const rtsStoredLines = rtsCurrentLayout && Array.isArray(rtsLengths)
+          && rtsLengths.every(n => Number.isInteger(n) && n >= 0)
+          && rtsLengths.reduce((sum, n) => sum + n, 0) === rtsChars.length;
+        const rtsMakeLines = () => {
+          if (rtsStoredLines) {
+            let offset = 0;
+            return rtsLengths.map(n => rtsChars.slice(offset, offset += n));
+          }
+          const lines = [];
+          let offset = 0;
+          for (const paragraph of annotation.comment.replace(/\\r\\n?/g, '\\n').split('\\n')) {
+            const count = Array.from(paragraph).length;
+            const part = rtsChars.slice(offset, offset += count);
+            lines.push(...(part.length ? calculateLines(part, fontSize, width) : [[]]));
+          }
+          return lines;
+        };
+      `],
+      [/lines\s*=\s*calculateLines\(chars, fontSize, width\);/g,
+        'lines = rtsCustom ? rtsMakeLines() : calculateLines(chars, fontSize, width);'],
+      [/if \(lines\.length > maxLines && fontSize > 4\)/g,
+        'if (!rtsCustom && lines.length > maxLines && fontSize > 4)'],
+      [/let lineY = refY - \(i \+ 1\) \* fontSize \* lineHeightMultiplier;/g,
+        `let lineY = refY - (rtsCurrentLayout && Number.isFinite(annotation.position.rtsBaseline)
+          ? annotation.position.rtsBaseline : lineHeightMultiplier) * fontSize
+          - i * fontSize * lineHeightMultiplier;`],
+    ];
+    patches.push([
+      /let chars = await fontEmbedder\.embedChars\(annotation\.comment, fontResource\);/g,
+      `const rtsHasSpacing = annotation.position.rtsLineHeight >= 0.5 && annotation.position.rtsLineHeight <= 3;
+       let chars = await fontEmbedder.embedChars(rtsHasSpacing
+         ? annotation.comment.replace(/[\\r\\n]/g, '') : annotation.comment, fontResource);
+       if (rtsHasSpacing && !chars) throw new Error('A text annotation contains a character without an embeddable font.');`,
+    ]);
+    if (font) patches.push(
+      [/let matrix = rotationMatrix\.slice\(\);\s*matrix\[4\]\s*=/g,
+        'let matrix = rotationMatrix.map(n => n.toFixed(8)); matrix[4] ='],
+      [/stream\.push\(`\/\$\{currentFont\} \$\{fontSize\} Tf`\);/g,
+        'stream.push(`${currentFont} ${fontSize} Tf`);'],
+    );
+    // The native exporter embeds every glyph on each annotation. Restrict the
+    // subset to accumulated used characters so Korean exports stay responsive.
+    if (font) patches.push([
+      /let unicodeCmap = ttfFont\.cmap\.unicode\.codeMap;\s*for \(let key in unicodeCmap\)/g,
+      'glyphIDsUsed.push(0); for (let key of font.charsUsed.map(char => char.codePointAt(0)))',
+    ]);
+    if (font) patches.push([
+      /constructor\(\{\s*standardFontProvider\s*\}\)\s*\{\s*this\._fonts = \[\];/g,
+      `constructor({ standardFontProvider }) {
+        this._fonts = [];
+        if (!fonts.some(f => f.fileName === ${JSON.stringify(font.fileName)})) fonts.push(${JSON.stringify(font)});`,
+    ]);
+    for (const [pattern, replacement] of patches) {
+      if ((source.match(pattern) || []).length !== 1) {
+        throw new Error("Unsupported Zotero PDF exporter: cannot preserve text line spacing safely.");
+      }
+      source = source.replace(pattern, replacement);
+    }
+    // Blob workers have an opaque origin. ONNX Runtime (loaded by Zotero's
+    // document worker) must not pass the string "null" as a URL base.
+    return source.replace(/(?<![\w.])location\.origin\b/g,
+      '(location.origin === "null" ? undefined : location.origin)');
+  }
+
   function duplicateToolForShortcut(shortcuts, currentPref, shortcut) {
     if (!shortcut) return null;
     return TOOLS.find(
@@ -304,6 +398,10 @@
     TEXT_FONT_SIZE_STEPS,
     DEFAULT_TEXT_TOOL,
     DEFAULT_TEXT_MAX_WIDTH,
+    DEFAULT_TEXT_LINE_HEIGHT,
+    normalizeTextLineHeight,
+    textLayoutKey,
+    patchPDFWorkerSource,
     normalizeTextToolDefaults,
     applyTextToolDefaults,
     activateBlackTextColor,

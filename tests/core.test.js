@@ -409,3 +409,12 @@ test("deduplicates Reader event windows and ignores unavailable views", () => {
   );
   assert.deepEqual(core.getReaderEventWindows(null), []);
 });
+
+test("normalizes line spacing multipliers and rejects invalid preferences", () => {
+  for (const value of [0.5, 1.2, 1.5, 2, 3]) {
+    assert.equal(core.normalizeTextLineHeight(String(value)), value);
+  }
+  for (const value of [undefined, "", "bad", 0, 0.4, 3.1, Infinity]) {
+    assert.equal(core.normalizeTextLineHeight(value), 1.8);
+  }
+});

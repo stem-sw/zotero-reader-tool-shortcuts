@@ -14,6 +14,7 @@ function loadBootstrap() {
     ChromeUtils: {},
     Services: {},
     APP_SHUTDOWN: 2,
+    Components: { utils: { exportFunction: fn => fn } },
     setTimeout,
     clearTimeout,
     setInterval,
@@ -36,6 +37,7 @@ function loadBootstrap() {
     normalizeTextToolDefaults: defaults => defaults,
     applyTextToolDefaults: () => false,
     normalizeTextMaxWidth: value => Number(value) || 900,
+    normalizeTextLineHeight: value => Number(value) || 1.2,
     createTextWidthAdjuster: (adjuster, width) => Object.assign(
       (annotation, options) => adjuster(annotation, options),
       { _rtsTextMaxWidth: width }
@@ -394,6 +396,7 @@ test("startup cancelled during preference registration installs no Reader handle
           normalizeTextToolDefaults: defaults => defaults,
           applyTextToolDefaults: () => false,
           normalizeTextMaxWidth: value => Number(value) || 900,
+          normalizeTextLineHeight: value => Number(value) || 1.2,
           createTextWidthAdjuster: (adjuster, width) => Object.assign(
             (annotation, options) => adjuster(annotation, options),
             { _rtsTextMaxWidth: width }
@@ -423,9 +426,14 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
   delete context.clearInterval;
   let timerImportCount = 0;
   let intervalStartCount = 0;
+  const prefBranch = "extensions.reader-tool-shortcuts.";
+  const prefs = new Map([[prefBranch + "textSize", 4]]);
   const zotero = {
     initializationPromise: Promise.resolve(),
-    Prefs: { get: () => undefined },
+    Prefs: {
+      get: key => prefs.get(key),
+      set: (key, value) => prefs.set(key, value),
+    },
     PreferencePanes: { register: async () => "pane" },
     Reader: { _readers: [], registerEventListener() {} },
     debug() {},
@@ -456,6 +464,7 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
           normalizeTextToolDefaults: defaults => defaults,
           applyTextToolDefaults: () => false,
           normalizeTextMaxWidth: value => Number(value) || 900,
+          normalizeTextLineHeight: value => Number(value) || 1.2,
           createTextWidthAdjuster: (adjuster, width) => Object.assign(
             (annotation, options) => adjuster(annotation, options),
             { _rtsTextMaxWidth: width }
@@ -470,6 +479,14 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
   assert.equal(timerImportCount, 1);
   assert.equal(intervalStartCount, 1);
   assert.equal(context.ReaderToolShortcutsScanTimer, 101);
+  assert.equal(prefs.get(prefBranch + "textSize"), 4);
+  assert.equal(prefs.has(prefBranch + "textLineHeight"), false);
+  prefs.set(prefBranch + "textSize", 12);
+  prefs.set(prefBranch + "textLineHeight", "2.4");
+  context.shutdown({}, context.APP_SHUTDOWN);
+  await context.startup({ id: "plugin", rootURI: "file:///plugin/" });
+  assert.equal(prefs.get(prefBranch + "textSize"), 12);
+  assert.equal(prefs.get(prefBranch + "textLineHeight"), "2.4");
 });
 
 test("Reader scan attaches the current outer and PDF windows", () => {
@@ -678,6 +695,7 @@ test("text-width patch clones generated arguments into the Reader window", () =>
   let cloneForReader;
   context.Components = {
     utils: {
+      exportFunction: fn => fn,
       cloneInto(value, target) {
         return { value, target };
       },
@@ -794,6 +812,7 @@ test("top-row 9 is routed with toolbar and Reader-realm cloning", () => {
   let received = null;
   context.Components = {
     utils: {
+      exportFunction: fn => fn,
       cloneInto(value, target) { return { value, target }; },
     },
   };
@@ -834,4 +853,318 @@ test("top-row 9 is routed with toolbar and Reader-realm cloning", () => {
   });
   assert.equal(prevented, 1);
   assert.equal(stopped, 1);
+});
+
+function lineHeightFixture() {
+  const context = loadBootstrap();
+  context.ReaderToolShortcutsCore = require("../src/core.js");
+  context.Components = { utils: { exportFunction: fn => fn, cloneInto: structuredClone } };
+  const styles = [];
+  const doc = {
+    head: { append(node) { styles.push(node); } },
+    createElement() {
+      return { textContent: "", remove() { styles.splice(styles.indexOf(this), 1); } };
+    },
+    getElementById(id) { return styles.find(style => style.id === id); },
+  };
+  const calls = [];
+  const native = function (annotation, options = {}) {
+    const css = styles.at(-1)?.textContent || "";
+    const spacing = Number(/line-height:\s*([\d.]+)/.exec(css)?.[1]) || 1.2;
+    calls.push({ annotation: structuredClone(annotation), options, spacing, owner: this });
+    const position = structuredClone(annotation.position);
+    const rect = position.rects[0];
+    if (options.adjustSingleLineWidth && rect[3] - rect[1] < 2 * position.fontSize) {
+      rect[2] = rect[0] + Math.max(10, annotation.comment.length * 5);
+    }
+    const lines = annotation.comment.split("\n").length;
+    rect[3] = rect[1] + lines * position.fontSize * spacing;
+    return position;
+  };
+  const primary = { _iframeWindow: { document: doc }, adjustTextAnnotationPosition: native };
+  const secondary = { adjustTextAnnotationPosition: native };
+  const manager = {
+    _annotations: [],
+    _adjustTextAnnotationPosition: (a, o) => primary.adjustTextAnnotationPosition(a, o),
+    render() { this.rendered = true; },
+  };
+  const reader = {
+    _iframeWindow: { document: {} },
+    _internalReader: { _annotationManager: manager, _primaryView: primary, _secondaryView: secondary },
+  };
+  context.Zotero.Prefs.get = () => "1.8";
+  context.rtsPatchTextWidth(reader, 900);
+  return { context, manager, reader, primary, secondary, native, doc, styles, calls };
+}
+
+test("line spacing fits multiline height without changing text or font size", () => {
+  const { manager, styles, calls } = lineHeightFixture();
+  const annotation = { id: "TEXT1", type: "text", comment: "first\nsecond", position: { fontSize: 10, rects: [[10, 20, 110, 44]] } };
+  const before = structuredClone(annotation);
+  const position = manager._adjustTextAnnotationPosition(annotation, { adjustSingleLineWidth: false });
+  assert.equal(position.rects[0][3] - position.rects[0][1], 36);
+  assert.equal(position.rtsLineHeight, 1.8);
+  assert.equal(position.fontSize, 10);
+  assert.deepEqual(annotation, before);
+  assert.equal(calls.at(-1).options.adjustSingleLineWidth, false);
+  assert.equal(styles.length, 1, "temporary measurement styles must be removed");
+});
+
+test("large line spacing still lets a single-line box grow when typing", () => {
+  const { context, manager, calls } = lineHeightFixture();
+  context.Zotero.Prefs.get = () => "2.5";
+  const annotation = { id: "TEXT2", type: "text", comment: "short", position: { fontSize: 10, rects: [[10, 20, 35, 32]] } };
+  manager._annotations = [{ ...annotation, comment: "" }];
+  annotation.position = manager._adjustTextAnnotationPosition(annotation, { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true });
+  manager._annotations = [annotation];
+  const edited = { ...annotation, comment: "a substantially longer sentence" };
+  const position = manager._adjustTextAnnotationPosition(edited, { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true });
+  assert.equal(position.rects[0][3] - position.rects[0][1], 25);
+  assert.ok(position.rects[0][2] > annotation.position.rects[0][2]);
+  assert.equal(calls.at(-1).spacing, 2.5);
+});
+
+test("editing a v1.0.23 annotation keeps native spacing until spacing is set explicitly", () => {
+  const { manager, calls } = lineHeightFixture();
+  const annotation = { id: "OLD", type: "text", comment: "before", position: { fontSize: 4, rects: [[10, 20, 110, 28]] } };
+  manager._annotations = [annotation];
+  const updated = manager._adjustTextAnnotationPosition({ ...annotation, comment: "after" });
+  assert.equal(calls.at(-1).spacing, 1.2);
+  assert.equal(updated.rtsLineHeight, undefined);
+  assert.equal(updated.fontSize, 4);
+});
+
+test("stored spacing survives default changes, rendering, split views and cleanup", () => {
+  const { context, manager, reader: lineReader, primary, secondary, native, doc, styles } = lineHeightFixture();
+  context.Zotero.Prefs.get = () => "2.5";
+  const annotation = { id: "SAVED", type: "text", comment: "first\nsecond", position: { fontSize: 10, rtsLineHeight: 1.5, rects: [[10, 20, 110, 50]] } };
+  manager._annotations = [annotation, { id: "OLD", type: "text", position: {} }];
+  const position = secondary.adjustTextAnnotationPosition(annotation, { adjustSingleLineWidth: false });
+  assert.equal(position.rtsLineHeight, 1.5);
+  assert.equal(position.rects[0][3] - position.rects[0][1], 30);
+  manager.render();
+  context.rtsPatchTextWidth(lineReader, 900);
+  assert.equal(manager.rendered, true);
+  const css = doc.getElementById("reader-tool-shortcuts-line-height").textContent;
+  assert.match(css, /data-id="SAVED".*line-height: 1\.5/);
+  assert.doesNotMatch(css, /OLD/);
+  context.rtsRestoreTextWidthPatches();
+  assert.equal(primary.adjustTextAnnotationPosition, native);
+  assert.equal(secondary.adjustTextAnnotationPosition, native);
+  assert.equal(styles.length, 0);
+});
+
+test("measurement errors cannot leave line-height overrides in the PDF document", () => {
+  const { manager, styles } = lineHeightFixture();
+  assert.throws(() => manager._adjustTextAnnotationPosition({ position: { rects: [] } }), TypeError);
+  assert.equal(styles.length, 1);
+});
+
+test("toolbar spacing saves a string preference and only updates selected editable text", () => {
+  const context = loadBootstrap();
+  context.ReaderToolShortcutsCore = require("../src/core.js");
+  context.Components = { utils: { exportFunction: fn => fn, cloneInto: structuredClone } };
+  const doc = {};
+  const updates = [];
+  const writes = [];
+  const manager = {
+    _annotations: [
+      { id: "YES", type: "text", sortIndex: "1", position: {} },
+      { id: "NO", type: "text", sortIndex: "2", position: {} },
+      { id: "READONLY", type: "text", readOnly: true, position: {} },
+      { id: "HIGHLIGHT", type: "highlight", position: {} },
+    ],
+    _adjustTextAnnotationPosition: annotation => annotation.position,
+    updateAnnotations: annotations => updates.push(...annotations),
+  };
+  context.Zotero.Prefs.set = (key, value) => writes.push([key, value]);
+  context.Zotero.Reader._readers = [{ _iframeWindow: { document: doc }, _internalReader: {
+    _annotationManager: manager, _state: { selectedAnnotationIDs: ["YES", "READONLY", "HIGHLIGHT"] },
+  } }];
+  assert.equal(context.rtsSetTextLineHeight("1.5", doc), true);
+  assert.deepEqual(writes, [["extensions.reader-tool-shortcuts.textLineHeight", "1.5"]]);
+  assert.deepEqual(updates, [{ id: "YES", sortIndex: "1", position: { rtsLineHeight: 1.5 } }]);
+  assert.equal(context.rtsSetTextLineHeight("3.5", doc), false);
+  assert.equal(writes.length, 1);
+});
+
+test("annotation popup changes selected font size and spacing without modifying defaults", () => {
+  const context = loadBootstrap();
+  context.ReaderToolShortcutsCore = require("../src/core.js");
+  context.Components = { utils: { exportFunction: fn => fn, cloneInto: structuredClone } };
+  const doc = fakeToolbarDocument();
+  const annotation = { id: "TEXT", type: "text", sortIndex: "1", position: { fontSize: 5, rtsLineHeight: 1.5 } };
+  const manager = { _annotations: [annotation],
+    _adjustTextAnnotationPosition: a => a.position,
+    updateAnnotations(updates) { for (const update of updates) Object.assign(annotation, update); },
+  };
+  const reader = { _iframeWindow: {}, _internalReader: { _annotationManager: manager } };
+  let controls;
+  context.rtsInstallAnnotationControls({ reader, doc, params: { annotation }, append: value => controls = value });
+  const [size, spacing] = controls.children;
+  assert.equal(size.children[0].value, "3");
+  assert.equal(size.children.at(-1).value, "192");
+  assert.equal(size.value, "5");
+  size.value = "3"; size.dispatch("change");
+  assert.equal(annotation.position.fontSize, 3);
+  assert.equal(annotation.position.rtsLineHeight, 1.5);
+  spacing.value = "2"; spacing.dispatch("change");
+  assert.equal(annotation.position.fontSize, 3);
+  assert.equal(annotation.position.rtsLineHeight, 2);
+});
+
+test("native text menu keeps its font slider with the original plugin steps", () => {
+  const context = loadBootstrap();
+  context.ReaderToolShortcutsCore = require("../src/core.js");
+  context.Components = { utils: { exportFunction: fn => fn, cloneInto: structuredClone } };
+  const open = function (menu) { return menu; };
+  const internal = { _onOpenContextMenu: open, _annotationManager: {
+    _annotations: [{ id: "TEXT", type: "text", position: { fontSize: 5 } }],
+  } };
+  let added;
+  context.rtsHandleAnnotationContextMenu({ reader: { _iframeWindow: {}, _internalReader: internal }, params: { ids: ["TEXT"] }, append: item => added = item });
+  const font = { slider: true, steps: [6, 8, 192] };
+  const ink = { slider: true, steps: [.5, 1, 3] };
+  internal._onOpenContextMenu({ itemGroups: [[font, ink]] });
+  assert.deepEqual(font.steps, require("../src/core.js").TEXT_FONT_SIZE_STEPS);
+  assert.deepEqual(ink.steps, [.5, 1, 3]);
+  assert.equal(internal._onOpenContextMenu, open);
+  assert.equal(added.label, "줄 간격 변경…");
+});
+
+test("PDF hook leaves normal operations on the native worker and routes custom export only", async () => {
+  const context = loadBootstrap();
+  const calls = [];
+  const manager = { _init() {}, _query(action, data, ...args) {
+    calls.push({ owner: this, action, data, args }); return Promise.resolve("ok");
+  } };
+  let closed = 0, loaded = 0;
+  const state = { close() { closed++; } };
+  context.Zotero.PDFWorker = manager;
+  context.rtsCreatePDFExportWorker = async () => { loaded++; return state; };
+  const original = manager._query;
+  context.rtsPatchPDFExport();
+  await manager._query("pdf.getFulltext", {});
+  await manager._query("pdf.writeAnnotations", { annotations: [{ type: "text", position: {} }] });
+  const data = { annotations: [{ type: "text", position: { rtsLineHeight: 1.5 } }] };
+  const transfer = [];
+  await manager._query("pdf.writeAnnotations", data, transfer);
+  await manager._query("pdf.writeAnnotations", data, transfer);
+  assert.equal(calls[0].owner, manager);
+  assert.equal(calls[1].owner, manager);
+  assert.equal(calls[2].owner, state);
+  assert.equal(calls[2].data, data);
+  assert.equal(calls[2].args[0], transfer);
+  assert.equal(loaded, 1);
+  context.rtsRestorePDFExport();
+  await Promise.resolve();
+  assert.equal(manager._query, original);
+  assert.equal(closed, 1);
+});
+
+test("disabling the plugin lets an active PDF export finish before closing its worker", async () => {
+  const context = loadBootstrap();
+  let finish, closed = 0;
+  const result = new Promise(resolve => finish = resolve);
+  const manager = { _init() {}, _query() { return result; } };
+  context.Zotero.PDFWorker = manager;
+  context.rtsCreatePDFExportWorker = async () => ({ close() { closed++; } });
+  context.rtsPatchPDFExport();
+  const pending = manager._query("pdf.writeAnnotations", { annotations: [{ type: "text", position: { rtsLineHeight: 2 } }] });
+  await Promise.resolve();
+  context.rtsRestorePDFExport();
+  assert.equal(closed, 0);
+  finish("done");
+  assert.equal(await pending, "done");
+  await Promise.resolve();
+  assert.equal(closed, 1);
+});
+
+test("failed PDF worker initialization can be retried after concurrent callers fail", async () => {
+  const context = loadBootstrap();
+  const manager = { _init() {}, _query() { return this.result; } };
+  context.Zotero.PDFWorker = manager;
+  let attempts = 0;
+  context.rtsCreatePDFExportWorker = async () => {
+    if (++attempts === 1) throw new Error("temporary load failure");
+    return { result: "exported", close() {} };
+  };
+  context.rtsPatchPDFExport();
+  const data = { annotations: [{ type: "text", position: { rtsLineHeight: 2 } }] };
+  const first = manager._query("pdf.writeAnnotations", data);
+  const second = manager._query("pdf.writeAnnotations", data);
+  await Promise.all([assert.rejects(first, /temporary/), assert.rejects(second, /temporary/)]);
+  assert.equal(attempts, 1);
+  assert.equal(await manager._query("pdf.writeAnnotations", data), "exported");
+  assert.equal(attempts, 2);
+});
+
+
+test("Reader callbacks are exported into its own realm before native code calls them", () => {
+  const { context, reader, manager, primary, secondary } = lineHeightFixture();
+  context.rtsRestoreTextWidthPatches();
+  const nativeRender = manager.render;
+  const exported = new Set();
+  context.Components.utils.exportFunction = (fn, target) => {
+    assert.equal(target, reader._iframeWindow);
+    const wrapper = function (...args) { return fn.apply(this, args); };
+    exported.add(wrapper);
+    return wrapper;
+  };
+  context.rtsPatchTextWidth(reader, 900);
+  assert.equal(manager.render, nativeRender, "keep the native rendering function intact");
+  for (const callback of [manager._adjustTextAnnotationPosition,
+    primary.adjustTextAnnotationPosition, secondary.adjustTextAnnotationPosition]) {
+    assert.ok(exported.has(callback));
+  }
+  manager.render();
+  assert.equal(manager.rendered, true);
+  context.rtsRestoreTextWidthPatches();
+});
+
+
+test("repeated scans use the installed realm wrapper instead of nesting callbacks", () => {
+  const { context, reader, manager, primary, secondary } = lineHeightFixture();
+  context.rtsRestoreTextWidthPatches();
+  let assignments = 0;
+  for (const [owner, property] of [[manager, "_adjustTextAnnotationPosition"],
+    [primary, "adjustTextAnnotationPosition"], [secondary, "adjustTextAnnotationPosition"]]) {
+    let installed = owner[property];
+    Object.defineProperty(owner, property, {
+      configurable: true,
+      get: () => installed,
+      set(callback) {
+        assignments++;
+        // Model Gecko exposing a different callable when a property is read.
+        installed = function (...args) { return callback.call(this, ...args); };
+      },
+    });
+  }
+  for (let scan = 0; scan < 40; scan++) context.rtsPatchTextWidth(reader, 900);
+  assert.equal(assignments, 3, "install each callback once across repeated scans");
+  context.rtsRestoreTextWidthPatches();
+  assert.equal(assignments, 6, "restore all three native callbacks");
+});
+
+
+test("native measurement spacing is applied and removed in both Reader frame versions", () => {
+  const { context, reader, manager } = lineHeightFixture();
+  const outerStyles = [];
+  const values = [];
+  reader._iframeWindow.document = {
+    head: { append(style) { outerStyles.push(style); } },
+    createElement() {
+      return {
+        set textContent(value) { values.push(value); },
+        remove() { outerStyles.splice(outerStyles.indexOf(this), 1); },
+      };
+    },
+  };
+  manager._adjustTextAnnotationPosition({ comment: "first\nsecond", position: {
+    fontSize: 12, rtsLineHeight: 2, rects: [[10, 20, 110, 44]],
+  } });
+  assert.ok(values.some(css => css.includes("line-height: 1.2")));
+  assert.ok(values.some(css => css.includes("line-height: 2")));
+  assert.equal(outerStyles.length, 0);
+  context.rtsRestoreTextWidthPatches();
 });
