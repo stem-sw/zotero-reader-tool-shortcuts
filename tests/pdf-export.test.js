@@ -42,9 +42,12 @@ const chars = text => Array.from(text, char => ({ char }));
 
 test("PDF export preserves font size, explicit blank lines and requested baseline spacing", () => {
   const run = exporter(core.patchPDFWorkerSource(nativeFixture));
-  const result = run({ position: {
+  const comment = "A\n\nB";
+  const position = {
     fontSize: 12, rtsLineHeight: 2, rtsBaseline: .9, rtsLineLengths: [1, 0, 1],
-  } }, chars("A\n\nB"));
+  };
+  position.rtsLayoutKey = core.textLayoutKey(comment, position);
+  const result = run({ comment, position }, chars(comment));
   assert.equal(result.fontSize, 12);
   assert.deepEqual(Array.from(result.lines), ["A", "", "B"]);
   assert.ok(Math.abs(result.baselines[0] - 89.2) < 1e-9);
@@ -54,9 +57,21 @@ test("PDF export preserves font size, explicit blank lines and requested baselin
 
 test("stored browser wrapping handles Korean and supplementary Unicode characters", () => {
   const run = exporter(core.patchPDFWorkerSource(nativeFixture));
-  const result = run({ position: { fontSize: 5, rtsLineHeight: 1.5, rtsLineLengths: [2, 2] } }, chars("가나😀A"));
+  const comment = "가나😀A";
+  const position = { fontSize: 5, rtsLineHeight: 1.5, rtsLineLengths: [2, 2] };
+  position.rtsLayoutKey = core.textLayoutKey(comment, position);
+  const result = run({ comment, position }, chars(comment));
   assert.deepEqual(Array.from(result.lines), ["가나", "😀A"]);
   assert.equal(result.baselines[0] - result.baselines[1], 7.5);
+});
+
+test("same-length edits in older Zotero clients invalidate cached wraps", () => {
+  const run = exporter(core.patchPDFWorkerSource(nativeFixture));
+  const position = { fontSize: 6, rtsLineHeight: 1.8, rtsLineLengths: [2, 2] };
+  position.rtsLayoutKey = core.textLayoutKey("AB\nCD", position);
+  const comment = "ABC\nD";
+  const result = run({ comment, position }, chars(comment));
+  assert.deepEqual(Array.from(result.lines), ["ABC", "D"]);
 });
 
 test("older spacing annotations without saved wraps retain manual line breaks", () => {

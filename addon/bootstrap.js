@@ -163,7 +163,7 @@ function rtsInstallAnnotationControls(event) {
   controls.className = "reader-tool-shortcuts-annotation-format";
   controls.addEventListener("pointerdown", event => event.stopPropagation());
   controls.children[0].value = String(annotation.position.fontSize);
-  controls.children[1].value = String(ReaderToolShortcutsCore.normalizeTextLineHeight(annotation.position.rtsLineHeight));
+  controls.children[1].value = String(ReaderToolShortcutsCore.normalizeTextLineHeight(annotation.position.rtsLineHeight ?? 1.2));
   for (const control of controls.children) {
     control.disabled = Boolean(annotation.readOnly || annotation.isExternal || reader?._internalReader?._annotationManager?._readOnly);
   }
@@ -196,7 +196,7 @@ function rtsHandleAnnotationContextMenu(event) {
     label: "줄 간격 변경…",
     disabled: Boolean(internal._annotationManager._readOnly || annotations.some(a => a.readOnly || a.isExternal)),
     onCommand() {
-      const value = { value: String(ReaderToolShortcutsCore.normalizeTextLineHeight(annotations[0].position.rtsLineHeight)) };
+      const value = { value: String(ReaderToolShortcutsCore.normalizeTextLineHeight(annotations[0].position.rtsLineHeight ?? 1.2)) };
       if (!Services.prompt.prompt(Zotero.getMainWindow(), "줄 간격", "글자 크기의 배수 (0.5–3.0)", value, null, {})) return;
       const height = Number(value.value);
       if (Number.isFinite(height) && height >= 0.5 && height <= 3) {
@@ -225,7 +225,7 @@ function rtsInstallTextSizeControl(event) {
   const spacing = container.children[1];
   if (doc.activeElement !== spacing) {
     spacing.value = String(selected
-      ? ReaderToolShortcutsCore.normalizeTextLineHeight(selected.position?.rtsLineHeight)
+      ? ReaderToolShortcutsCore.normalizeTextLineHeight(selected.position?.rtsLineHeight ?? 1.2)
       : rtsGetTextLineHeight());
   }
   const textButton = doc.querySelector(".toolbar-button.text");
@@ -296,6 +296,7 @@ function rtsMeasureTextLayout(reader, annotation, position) {
       offset = end + 1;
     }
     position.rtsLineLengths = lengths;
+    position.rtsLayoutKey = ReaderToolShortcutsCore.textLayoutKey(value, position);
   }
   finally { probe.remove(); }
   return position;
@@ -379,6 +380,12 @@ function rtsPatchTextWidth(reader, maxWidth) {
   const wrapped = Components.utils.exportFunction(function (annotation, options = {}) {
     const doc = reader._internalReader?._primaryView?._iframeWindow?.document;
     if (!doc?.head || !annotation?.position?.rects) return adjustWidth.call(this, annotation, options);
+    const previous = manager._annotations?.find(a => a.id === annotation.id);
+    // Zotero creates empty boxes before calling the adjuster on first input.
+    const legacy = previous?.comment || (!annotation.id && annotation.comment);
+    if (legacy && annotation.position.rtsLineHeight == null) {
+      return adjustWidth.call(this, annotation, options);
+    }
     const lineHeight = ReaderToolShortcutsCore.normalizeTextLineHeight(
       annotation.position.rtsLineHeight ?? rtsGetTextLineHeight()
     );
@@ -397,8 +404,7 @@ function rtsPatchTextWidth(reader, maxWidth) {
     const fixedWidth = { ...options, adjustSingleLineWidth: false, enableSingleLineMaxWidth: false };
     try {
       let source = annotation;
-      const previous = manager._annotations?.find(a => a.id === annotation.id) || annotation;
-      if (options.adjustSingleLineWidth && previous.position?.rtsLineHeight
+      if (options.adjustSingleLineWidth && previous?.position?.rtsLineHeight
           && previous.position.rtsLineHeight !== 1.2) {
         const position = nativeAdjust.call(this, toReader({
           ...annotation, comment: previous.comment,
@@ -737,10 +743,17 @@ function rtsPatchPDFExport(rootURI) {
     if (!custom) return record.original.call(this, action, data, ...args);
     record.active++;
     try {
-      record.load ||= rtsCreatePDFExportWorker(zotero, manager, core, rootURI);
-      const state = await record.load;
-      if (state.error) throw state.error;
-      return await record.original.call(state, action, data, ...args);
+      const load = record.load ||= rtsCreatePDFExportWorker(zotero, manager, core, rootURI);
+      let state;
+      try {
+        state = await load;
+        if (state.error) throw state.error;
+        return await record.original.call(state, action, data, ...args);
+      }
+      catch (error) {
+        if ((!state || state.error) && record.load === load) record.load = null;
+        throw error;
+      }
     }
     finally {
       record.active--;
@@ -804,13 +817,6 @@ async function startup({ id, rootURI }) {
     return;
   }
   ReaderToolShortcutsPreferencePaneID = preferencePaneID;
-
-  // Apply the requested defaults once on upgrade, then retain user changes.
-  if (zotero.Prefs.get(RTS_PREF_BRANCH + "textDefaultsVersion") !== "1.0.26") {
-    zotero.Prefs.set(RTS_PREF_BRANCH + "textSize", 6);
-    zotero.Prefs.set(RTS_PREF_BRANCH + "textLineHeight", "1.8");
-    zotero.Prefs.set(RTS_PREF_BRANCH + "textDefaultsVersion", "1.0.26");
-  }
 
   ReaderToolShortcutsListener = rtsHandleReaderEvent;
 

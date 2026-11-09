@@ -427,7 +427,7 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
   let timerImportCount = 0;
   let intervalStartCount = 0;
   const prefBranch = "extensions.reader-tool-shortcuts.";
-  const prefs = new Map([[prefBranch + "textSize", 24], [prefBranch + "textLineHeight", "2"]]);
+  const prefs = new Map([[prefBranch + "textSize", 4]]);
   const zotero = {
     initializationPromise: Promise.resolve(),
     Prefs: {
@@ -479,8 +479,8 @@ test("startup imports privileged timers when bootstrap globals are absent", asyn
   assert.equal(timerImportCount, 1);
   assert.equal(intervalStartCount, 1);
   assert.equal(context.ReaderToolShortcutsScanTimer, 101);
-  assert.equal(prefs.get(prefBranch + "textSize"), 6);
-  assert.equal(prefs.get(prefBranch + "textLineHeight"), "1.8");
+  assert.equal(prefs.get(prefBranch + "textSize"), 4);
+  assert.equal(prefs.has(prefBranch + "textLineHeight"), false);
   prefs.set(prefBranch + "textSize", 12);
   prefs.set(prefBranch + "textLineHeight", "2.4");
   context.shutdown({}, context.APP_SHUTDOWN);
@@ -914,6 +914,7 @@ test("large line spacing still lets a single-line box grow when typing", () => {
   const { context, manager, calls } = lineHeightFixture();
   context.Zotero.Prefs.get = () => "2.5";
   const annotation = { id: "TEXT2", type: "text", comment: "short", position: { fontSize: 10, rects: [[10, 20, 35, 32]] } };
+  manager._annotations = [{ ...annotation, comment: "" }];
   annotation.position = manager._adjustTextAnnotationPosition(annotation, { adjustSingleLineWidth: true, enableSingleLineMaxWidth: true });
   manager._annotations = [annotation];
   const edited = { ...annotation, comment: "a substantially longer sentence" };
@@ -921,6 +922,16 @@ test("large line spacing still lets a single-line box grow when typing", () => {
   assert.equal(position.rects[0][3] - position.rects[0][1], 25);
   assert.ok(position.rects[0][2] > annotation.position.rects[0][2]);
   assert.equal(calls.at(-1).spacing, 2.5);
+});
+
+test("editing a v1.0.23 annotation keeps native spacing until spacing is set explicitly", () => {
+  const { manager, calls } = lineHeightFixture();
+  const annotation = { id: "OLD", type: "text", comment: "before", position: { fontSize: 4, rects: [[10, 20, 110, 28]] } };
+  manager._annotations = [annotation];
+  const updated = manager._adjustTextAnnotationPosition({ ...annotation, comment: "after" });
+  assert.equal(calls.at(-1).spacing, 1.2);
+  assert.equal(updated.rtsLineHeight, undefined);
+  assert.equal(updated.fontSize, 4);
 });
 
 test("stored spacing survives default changes, rendering, split views and cleanup", () => {
@@ -1067,6 +1078,25 @@ test("disabling the plugin lets an active PDF export finish before closing its w
   assert.equal(await pending, "done");
   await Promise.resolve();
   assert.equal(closed, 1);
+});
+
+test("failed PDF worker initialization can be retried after concurrent callers fail", async () => {
+  const context = loadBootstrap();
+  const manager = { _init() {}, _query() { return this.result; } };
+  context.Zotero.PDFWorker = manager;
+  let attempts = 0;
+  context.rtsCreatePDFExportWorker = async () => {
+    if (++attempts === 1) throw new Error("temporary load failure");
+    return { result: "exported", close() {} };
+  };
+  context.rtsPatchPDFExport();
+  const data = { annotations: [{ type: "text", position: { rtsLineHeight: 2 } }] };
+  const first = manager._query("pdf.writeAnnotations", data);
+  const second = manager._query("pdf.writeAnnotations", data);
+  await Promise.all([assert.rejects(first, /temporary/), assert.rejects(second, /temporary/)]);
+  assert.equal(attempts, 1);
+  assert.equal(await manager._query("pdf.writeAnnotations", data), "exported");
+  assert.equal(attempts, 2);
 });
 
 

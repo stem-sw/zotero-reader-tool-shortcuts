@@ -168,6 +168,17 @@
       : DEFAULT_TEXT_LINE_HEIGHT;
   }
 
+  function textLayoutKey(comment, position) {
+    const text = (comment || "").replace(/\r\n?/g, "\n");
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+    }
+    const rect = position.rects?.[0];
+    const width = rect ? (rect[2] - rect[0]).toFixed(3) : "";
+    return [text.length, hash >>> 0, width, position.fontSize, position.rtsLineHeight].join(":");
+  }
+
   function createTextWidthAdjuster(nativeAdjust, maxWidth, getPageRect, cloneForReader) {
     const normalizedMaxWidth = normalizeTextMaxWidth(maxWidth);
     const toReader = typeof cloneForReader === "function" ? cloneForReader : value => value;
@@ -286,7 +297,9 @@
         let lineHeightMultiplier = rtsCustom ? rtsHeight : 1.2;
         const rtsChars = chars.filter(c => c.char !== '\\n' && c.char !== '\\r');
         const rtsLengths = annotation.position.rtsLineLengths;
-        const rtsStoredLines = rtsCustom && Array.isArray(rtsLengths)
+        const rtsCurrentLayout = rtsCustom && annotation.position.rtsLayoutKey
+          === (${textLayoutKey})(annotation.comment, annotation.position);
+        const rtsStoredLines = rtsCurrentLayout && Array.isArray(rtsLengths)
           && rtsLengths.every(n => Number.isInteger(n) && n >= 0)
           && rtsLengths.reduce((sum, n) => sum + n, 0) === rtsChars.length;
         const rtsMakeLines = () => {
@@ -309,7 +322,7 @@
       [/if \(lines\.length > maxLines && fontSize > 4\)/g,
         'if (!rtsCustom && lines.length > maxLines && fontSize > 4)'],
       [/let lineY = refY - \(i \+ 1\) \* fontSize \* lineHeightMultiplier;/g,
-        `let lineY = refY - (rtsCustom && Number.isFinite(annotation.position.rtsBaseline)
+        `let lineY = refY - (rtsCurrentLayout && Number.isFinite(annotation.position.rtsBaseline)
           ? annotation.position.rtsBaseline : lineHeightMultiplier) * fontSize
           - i * fontSize * lineHeightMultiplier;`],
     ];
@@ -387,6 +400,7 @@
     DEFAULT_TEXT_MAX_WIDTH,
     DEFAULT_TEXT_LINE_HEIGHT,
     normalizeTextLineHeight,
+    textLayoutKey,
     patchPDFWorkerSource,
     normalizeTextToolDefaults,
     applyTextToolDefaults,
